@@ -1,0 +1,26 @@
+{
+  "@context": ["https://www.w3.org/2018/credentials/v1"],
+  "type": ["VerifiableCredential", "IDCard"],
+  "id": "urn:credential:34502108-4540",
+  "issuer": "did:web:asgard-state.auth0lab.com",
+  "issuanceDate": "2020-07-20T13:58:53Z",
+  "credentialSubject": {
+    "id": "urn:id-card:personal:1",
+    "personalIdentifier": "34502108",
+    "name": "Thor Odinson",
+    "birthDate": "0964-06-25",
+    "nationality": "Asgardian",
+    "address": {
+      "streetAddress": "1 Asgard Palace",
+      "addressLocality": "Asgard",
+      "addressCountry": "Realms of Yggdrasil"
+    }
+  },
+  "proof": {
+    "type": "JsonWebSignature2020",
+    "created": "2020-07-20T13:58:53Z",
+    "proofPurpose": "assertionMethod",
+    "verificationMethod": "did:web:asgard-state.auth0lab.com#64f71b9a91254a628d74a275",
+    "jws": "eyJhbGciOiJFUzI1NksifQ.eyJAY29udGV4dCI6WyJodHRwczovL3d3dy53My5vcmcvMjAxOC9jcmVkZW50aWFscy92MSJdLCJ0eXBlIjpbIlZlcmlmaWFibGVDcmVkZW50aWFsIiwiSURDYXJkIl0sImlkIjoidXJuOmNyZWRlbnRpYWw6MzQ1MDIxMDgtNDU0MCIsImlzc3VlciI6ImRpZDp3ZWI6YXNnYXJkLXN0YXRlLmF1dGgwbGFiLmNvbSIsImlzc3VhbmNlRGF0ZSI6IjIwMjAtMDctMjBUMTM6NTg6NTNaIiwiY3JlZGVudGlhbFN1YmplY3QiOnsiaWQiOiJ1cm46aWQtY2FyZDpwZXJzb25hbDoxIiwicGVyc29uYWxJZGVudGlmaWVyIjoiMzQ1MDIxMDgiLCJuYW1lIjoiVGhvciBPZGluc29uIiwiYmlydGhEYXRlIjoiMDk2NC0wNi0yNSIsIm5hdGlvbmFsaXR5IjoiQXNnYXJkaWFuIiwiYWRkcmVzcyI6eyJzdHJlZXRBZGRyZXNzIjoiMSBBc2dhcmQgUGFsYWNlIiwiYWRkcmVzc0xvY2FsaXR5IjoiQXNnYXJkIiwiYWRkcmVzc0NvdW50cnkiOiJSZWFsbXMgb2YgWWdnZHJhc2lsIn19LCJub25jZSI6ImU5Y2MyNjYwLWU5MTMtNDgzZC1iZjM2LTM3ZTRjZjg1Yzc4NyJ9.pAb4L4g5O4rT2jA9h1tD31f7l0Yj93JzotP8F3DA4lWJbOIkD67Y1kCqPbdz24Vjd3yEzMKNy1Cwe3t3YV9j_w"
+  }
+}
