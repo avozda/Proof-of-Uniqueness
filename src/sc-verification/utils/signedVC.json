@@ -1,0 +1,32 @@
+{
+  "@context": [
+    "https://www.w3.org/2018/credentials/v1"
+  ],
+  "type": [
+    "VerifiableCredential",
+    "CzechNationalIdCredential"
+  ],
+  "issuer": "did:web:postsignum.cz",
+  "issuanceDate": "2025-07-08T13:06:02Z",
+  "expirationDate": "2026-07-28T13:06:02Z",
+  "credentialSubject": {
+    "id": "did:key:z6Mk...",
+    "givenName": "Adam",
+    "familyName": "Vozda",
+    "nationality": "CZ",
+    "dateOfBirth": "1990-01-01",
+    "serialNumber": "P1026047"
+  },
+  "proof": {
+    "type": "JsonWebSignature2020",
+    "created": "2025-07-09T19:07:20.301Z",
+    "proofPurpose": "assertionMethod",
+    "verificationMethod": "did:key:z6Mk...#key-1",
+    "jws": "6Ytvwo9A/hoz5RcEZWR0e1rChFIy9KI8HJrTHzZUEt2+U8rnncUetIuSJpPmMPxSiZ6Gbe2wN6ACpgIKBT18CA==",
+    "publicKeyJwk": {
+      "kty": "OKP",
+      "crv": "Ed25519",
+      "x": "Vknj2ohg2CuEjf1nA4wwMqIogPbPRaEHaMZamrJ11pM"
+    }
+  }
+}
