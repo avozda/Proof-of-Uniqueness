@@ -1,49 +1,63 @@
 import fs from "fs/promises";
-import * as ed from "@noble/ed25519";
-import { sha512 } from "@noble/hashes/sha512";
+import { buildEddsa } from "circomlibjs";
+import pkg from "poseidon-lite";
+const { poseidon1 } = pkg;
+import { base58btc } from "multiformats/bases/base58";
 
-// 💥 Patch hash function (this is required in ESM!)
-ed.etc.sha512Sync = sha512;
+function stringToBigInt(str) {
+  return BigInt("0x" + Buffer.from(str).toString("hex"));
+}
 
 const canonicalize = (obj) => JSON.stringify(obj, Object.keys(obj).sort(), 0);
 
-const toBase64Url = (buf) =>
-  Buffer.from(buf)
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
+async function main() {
+  const eddsa = await buildEddsa();
+  console.log("EdDSA object built successfully.");
 
-const main = async () => {
-  const raw = await fs.readFile("../inputs/credential.json", "utf-8");
-  const vc = JSON.parse(raw);
-  delete vc.proof;
+  const inputFilePath = "../inputs/credential.json";
+  const outputFilePath = "../inputs/signedVC.json";
 
-  const message = new TextEncoder().encode(canonicalize(vc));
+  console.log(`Loading credential from ${inputFilePath}...`);
 
-  const privateKey = ed.utils.randomPrivateKey();
-  const publicKey = await ed.getPublicKey(privateKey);
+  const vcFile = await fs.readFile(inputFilePath, "utf8");
+  const vcObject = JSON.parse(vcFile);
 
-  const signature = await ed.sign(message, privateKey);
-  const signatureB64 = Buffer.from(signature).toString("base64");
+  const privateKey = Buffer.from("00".repeat(31) + "01", "hex");
+  const publicKey = eddsa.prv2pub(privateKey);
+  console.log("Generated EdDSA key pair.");
 
-  const jwk = {
-    kty: "OKP",
-    crv: "Ed25519",
-    x: toBase64Url(publicKey),
-  };
+  const dataToHash = JSON.parse(JSON.stringify(vcObject));
+  const canonicalPayload = canonicalize(dataToHash);
+  const messageHash = poseidon1([stringToBigInt(canonicalPayload)]);
+  console.log("Hashed credential data with Poseidon.");
 
-  vc.proof = {
-    type: "JsonWebSignature2020",
+  const messageHashBytes = eddsa.babyJub.F.e(messageHash);
+  const signature = eddsa.signPoseidon(privateKey, messageHashBytes);
+  console.log("Signed hash with EdDSA private key.");
+
+  const prefixedPublicKey = new Uint8Array(publicKey[0].length + 2);
+  prefixedPublicKey.set([0xed, 0x01]);
+  prefixedPublicKey.set(publicKey[0], 2);
+  const publicKeyMultibase = base58btc.encode(prefixedPublicKey);
+  const didKey = `did:key:${publicKeyMultibase}`;
+
+  vcObject.proof = {
+    type: "Ed25519Signature2020",
     created: new Date().toISOString(),
     proofPurpose: "assertionMethod",
-    verificationMethod: "did:key:z6Mk...#key-1",
-    jws: signatureB64,
-    publicKeyJwk: jwk,
+    verificationMethod: {
+      id: didKey,
+      type: "Ed25519VerificationKey2020",
+      controller: vcObject.issuer,
+      publicKeyMultibase: publicKeyMultibase,
+    },
+    proofValue: Buffer.from(eddsa.packSignature(signature)).toString("base64"),
   };
 
-  await fs.writeFile("signedVC.json", JSON.stringify(vc, null, 2));
-  console.log("✅ Signed VC written to signedVC.json");
-};
+  await fs.writeFile(outputFilePath, JSON.stringify(vcObject, null, 2));
+  console.log(`\n✅ Success! Signed VC saved to ${outputFilePath}`);
+}
 
-main().catch(console.error);
+main().catch((err) => {
+  console.error("An error occurred:", err);
+});
