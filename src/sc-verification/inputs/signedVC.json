@@ -20,14 +20,14 @@
   },
   "proof": {
     "type": "Ed25519Signature2020",
-    "created": "2025-07-09T19:47:38.380Z",
+    "created": "2025-07-10T12:15:59.551Z",
     "proofPurpose": "assertionMethod",
     "verificationMethod": {
-      "id": "did:key:z6MksP3VLZ78nL8cFVN6EENNvZpqECMPPdCqKAh42zKhzZ1f",
+      "id": "did:key:z2DhSjNWz2qXSGiQSK5nVdqQUcDY3hJ25eZFCt3YBdhwo5w",
       "type": "Ed25519VerificationKey2020",
       "controller": "did:web:postsignum.cz",
-      "publicKeyMultibase": "z6MksP3VLZ78nL8cFVN6EENNvZpqECMPPdCqKAh42zKhzZ1f"
+      "publicKeyMultibase": "z2DhSjNWz2qXSGiQSK5nVdqQUcDY3hJ25eZFCt3YBdhwo5w"
     },
-    "proofValue": "r/ZJv++oKYvhdmQVzXXoW2sww+xrtb+n0oW8tyfa2Q4pNWVWMqh8625d85nh30bYLe9bddFaSAfQb6ueH6NBAg=="
+    "proofValue": "LHTc0Oki4PGxvdl3hIdr4Llv9NwF1sFOPUR2IxASwxXF49EnlONlbD1y40ljweib3hB/LpX0kkCtBrLUUOenBQ=="
   }
 }

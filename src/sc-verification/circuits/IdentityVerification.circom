@@ -11,6 +11,7 @@ template IdentityVerification () {
 
     signal input signature_R8[2];
     signal input signature_S;
+    signal input signature_M;
 
     signal input firstName;
     signal input secondName;
@@ -27,6 +28,7 @@ template IdentityVerification () {
     poseidon.inputs[1] <== secondName;
     poseidon.inputs[2] <== dob;
     poseidon.inputs[3] <== nationality;
+    IDHash <== poseidon.out;
 
     component verifier = EdDSAPoseidonVerifier();
     verifier.enabled <== 1;
@@ -35,9 +37,7 @@ template IdentityVerification () {
     verifier.R8x <== signature_R8[0];
     verifier.R8y <== signature_R8[1];
     verifier.S <== signature_S;
-    verifier.M <== poseidon.out;
-
-    IDHash <== poseidon.out;
+    verifier.M <== signature_M;
 }
 
 component main = IdentityVerification();
