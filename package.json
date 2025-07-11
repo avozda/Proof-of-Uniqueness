@@ -1,0 +1,20 @@
+{
+  "name": "proof-of-uniqueness",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@noble/ed25519": "^2.3.0",
+    "@noble/hashes": "^1.8.0",
+    "circomlib": "^2.0.5",
+    "circomlibjs": "^0.1.7",
+    "multiformats": "^13.3.7",
+    "poseidon-lite": "^0.3.0"
+  }
+}
