@@ -11,7 +11,12 @@ const canonicalize = (obj: any): string =>
   JSON.stringify(obj, Object.keys(obj).sort(), 0);
 
 function stringToBigInt(str: string): bigint {
-  return BigInt("0x" + Buffer.from(str).toString("hex"));
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(str);
+  const hex = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return BigInt("0x" + hex);
 }
 
 export async function createCircuitInputs(
@@ -22,8 +27,10 @@ export async function createCircuitInputs(
 
   // Unpack signature and public key
   const signatureB64 = signedVc.proof.proofValue;
-  const signatureBuffer = Buffer.from(signatureB64, "base64");
-  const unpackedSignature = eddsa.unpackSignature(signatureBuffer);
+  const signatureBytes = Uint8Array.from(atob(signatureB64), (c) =>
+    c.charCodeAt(0)
+  );
+  const unpackedSignature = eddsa.unpackSignature(signatureBytes);
 
   const publicKeyMultibase =
     signedVc.proof.verificationMethod.publicKeyMultibase;

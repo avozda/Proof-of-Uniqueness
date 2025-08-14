@@ -4,7 +4,12 @@ import { base58btc } from "multiformats/bases/base58";
 import type { VerifiableCredential, FormData } from "../types/credentials";
 
 function stringToBigInt(str: string): bigint {
-  return BigInt("0x" + Buffer.from(str).toString("hex"));
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(str);
+  const hex = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return BigInt("0x" + hex);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,10 +24,11 @@ export async function signVerifiableCredential(
   const F = eddsa.babyJub.F;
 
   // Generate EdDSA key pair
-  const privateKey = Buffer.from(
+  const privateKeyHexStr =
     privateKeyHex ||
-      "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-    "hex"
+    "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+  const privateKey = new Uint8Array(
+    privateKeyHexStr.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) || []
   );
   const publicKey = eddsa.prv2pub(privateKey);
 
@@ -70,7 +76,7 @@ export async function signVerifiableCredential(
       controller: vcObject.issuer,
       publicKeyMultibase: publicKeyMultibase,
     },
-    proofValue: Buffer.from(eddsa.packSignature(signature)).toString("base64"),
+    proofValue: btoa(String.fromCharCode(...eddsa.packSignature(signature))),
   };
 
   // Final verification

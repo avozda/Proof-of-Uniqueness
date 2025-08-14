@@ -27,9 +27,9 @@ declare module "circomlibjs" {
       unpackPoint(bytes: Uint8Array): any[] | null;
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    prv2pub(privateKey: Buffer): any[];
+    prv2pub(privateKey: Uint8Array): any[];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    signPoseidon(privateKey: Buffer, message: any): Signature;
+    signPoseidon(privateKey: Uint8Array, message: any): Signature;
 
     verifyPoseidon(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
