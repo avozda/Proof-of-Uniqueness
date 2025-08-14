@@ -1,0 +1,43 @@
+pragma circom 2.2.2;
+
+include "../../node_modules/circomlib/circuits/eddsaposeidon.circom";
+include "../../node_modules/circomlib/circuits/poseidon.circom";
+
+template HashIDClaim () {  
+
+    // Declaration of signals.  
+       
+    signal input publicKey[2];
+
+    signal input signature_R8[2];
+    signal input signature_S;
+    signal input signature_M;
+
+    signal input firstName;
+    signal input secondName;
+    signal input dob;
+    signal input nationality;
+
+    signal output IDHash; 
+
+    // Constraints.  
+
+    component poseidon = Poseidon(4);
+
+    poseidon.inputs[0] <== firstName;
+    poseidon.inputs[1] <== secondName;
+    poseidon.inputs[2] <== dob;
+    poseidon.inputs[3] <== nationality;
+    IDHash <== poseidon.out;
+
+    component verifier = EdDSAPoseidonVerifier();
+    verifier.enabled <== 1;
+    verifier.Ax <== publicKey[0];
+    verifier.Ay <== publicKey[1];
+    verifier.R8x <== signature_R8[0];
+    verifier.R8y <== signature_R8[1];
+    verifier.S <== signature_S;
+    verifier.M <== signature_M;
+}
+
+component main = HashIDClaim();
