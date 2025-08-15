@@ -81,6 +81,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             last_block = current_block;
         }
     }
-
-    Ok(())
 }
