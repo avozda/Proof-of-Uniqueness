@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { CredentialProcessor } from "../utils/credentialProcessor";
+import { useAccount, useConnect, useDisconnect, useChainId } from "wagmi";
 import type {
   ProcessingResult,
   ProcessingSteps,
@@ -123,6 +124,13 @@ export function IdentityForm() {
   const [processingSteps, setProcessingSteps] = useState<ProcessingSteps[]>([]);
   const [result, setResult] = useState<ProcessingResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [submitToContract, setSubmitToContract] = useState(false);
+
+  // Wagmi hooks
+  const { address, isConnected } = useAccount();
+  const { connect, connectors } = useConnect();
+  const { disconnect } = useDisconnect();
+  const chainId = useChainId();
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -153,7 +161,10 @@ export function IdentityForm() {
       };
 
       const processingResult = await processor.processCredential(
-        credentialData
+        credentialData,
+        undefined, // privateKeyHex
+        submitToContract,
+        chainId
       );
       setResult(processingResult);
       console.log("Processing completed successfully!", processingResult);
@@ -278,13 +289,83 @@ export function IdentityForm() {
                   )}
                 />
 
+                {/* Blockchain submission option */}
+                <div className="border-t pt-4 space-y-4">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="submitToContract"
+                      checked={submitToContract}
+                      onChange={(e) => setSubmitToContract(e.target.checked)}
+                      disabled={isProcessing}
+                      className="rounded"
+                    />
+                    <label
+                      htmlFor="submitToContract"
+                      className="text-sm text-gray-700"
+                    >
+                      Submit proof to blockchain
+                    </label>
+                  </div>
+
+                  {submitToContract && (
+                    <div className="space-y-2">
+                      {!isConnected ? (
+                        <div className="space-y-2">
+                          <p className="text-sm text-gray-600">
+                            Connect your wallet to submit to blockchain:
+                          </p>
+                          {connectors.map((connector) => (
+                            <Button
+                              key={connector.uid}
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => connect({ connector })}
+                              disabled={isProcessing}
+                              className="w-full"
+                            >
+                              Connect {connector.name}
+                            </Button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <p className="text-sm text-green-600">
+                            ✓ Connected: {address?.slice(0, 6)}...
+                            {address?.slice(-4)}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Chain ID: {chainId}
+                          </p>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => disconnect()}
+                            disabled={isProcessing}
+                          >
+                            Disconnect
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <div className="space-y-2">
                   <Button
                     type="submit"
                     className="w-full"
-                    disabled={isProcessing}
+                    disabled={
+                      isProcessing || (submitToContract && !isConnected)
+                    }
                   >
-                    {isProcessing ? "Processing..." : "Generate Proof"}
+                    {isProcessing
+                      ? "Processing..."
+                      : submitToContract
+                      ? "Generate & Submit Proof"
+                      : "Generate Proof"}
                   </Button>
 
                   {result && (
@@ -368,8 +449,10 @@ export function IdentityForm() {
             {result && (
               <Card className="p-4 mt-4 bg-green-50 border-green-200">
                 <p className="text-green-800 text-sm">
-                  <strong>Success!</strong> ZK proof generated successfully. You
-                  can now download the generated files.
+                  <strong>Success!</strong> ZK proof generated successfully.
+                  {result.contractSubmission && (
+                    <span> Proof submitted to blockchain!</span>
+                  )}
                 </p>
                 <div className="mt-3 text-xs text-green-600 space-y-1">
                   <div>
@@ -377,7 +460,42 @@ export function IdentityForm() {
                   </div>
                   <div>• Circuit Inputs: Data prepared for ZK circuit</div>
                   <div>• ZK Proof: Zero-knowledge proof of your identity</div>
+                  {result.contractSubmission && (
+                    <>
+                      <div>
+                        • Transaction Hash:{" "}
+                        {result.contractSubmission.hash.slice(0, 10)}...
+                      </div>
+                      <div>
+                        • Block: #
+                        {result.contractSubmission.receipt?.blockNumber}
+                      </div>
+                    </>
+                  )}
                 </div>
+                {result.contractSubmission && (
+                  <div className="mt-2">
+                    {chainId === 31337 ? (
+                      <span className="text-xs text-gray-600">
+                        Transaction Hash: {result.contractSubmission.hash}
+                      </span>
+                    ) : (
+                      <a
+                        href={
+                          chainId === 11155111
+                            ? `https://sepolia.etherscan.io/tx/${result.contractSubmission.hash}`
+                            : `https://etherscan.io/tx/${result.contractSubmission.hash}`
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:text-blue-800"
+                      >
+                        View on {chainId === 11155111 ? "Sepolia " : ""}
+                        Etherscan →
+                      </a>
+                    )}
+                  </div>
+                )}
               </Card>
             )}
 

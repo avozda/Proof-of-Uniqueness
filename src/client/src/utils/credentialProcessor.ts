@@ -1,6 +1,10 @@
 import { signVerifiableCredential, createCredentialFromData } from "./signVC";
 import { createCircuitInputs, downloadCircuitInputs } from "./createInput";
 import { generateZKProof, downloadProof } from "./zkProof";
+import {
+  submitProofToContract,
+  downloadTransactionDetails,
+} from "./contractSubmission";
 import type {
   VerifiableCredential,
   SignedVerifiableCredential,
@@ -8,12 +12,14 @@ import type {
   FormData,
 } from "../types/credentials";
 import type { ZKProofResult } from "./zkProof";
+import type { ContractSubmissionResult } from "./contractSubmission";
 
 export interface ProcessingResult {
   credential: VerifiableCredential;
   signedCredential: SignedVerifiableCredential;
   circuitInputs: CircuitInputs;
   zkProof: ZKProofResult;
+  contractSubmission?: ContractSubmissionResult;
 }
 
 export interface ProcessingSteps {
@@ -28,6 +34,8 @@ export class CredentialProcessor {
     { step: "Signing credential", completed: false },
     { step: "Creating circuit inputs", completed: false },
     { step: "Generating ZK proof", completed: false },
+    { step: "Validating proof on-chain", completed: false },
+    { step: "Submitting to blockchain", completed: false },
   ];
 
   private onProgress?: (steps: ProcessingSteps[]) => void;
@@ -44,7 +52,9 @@ export class CredentialProcessor {
 
   async processCredential(
     formData: FormData,
-    privateKeyHex?: string
+    privateKeyHex?: string,
+    submitToContract: boolean = false,
+    chainId?: number
   ): Promise<ProcessingResult> {
     try {
       // Step 1: Create credential from form data
@@ -70,7 +80,9 @@ export class CredentialProcessor {
 
       // Step 3: Create circuit inputs
       console.log("Step 3: Creating circuit inputs");
-      const circuitInputs = await createCircuitInputs(signedCredential);
+      const circuitInputs = await createCircuitInputs(
+        signedCredential as SignedVerifiableCredential
+      );
       this.updateProgress(2, circuitInputs);
 
       // Step 4: Generate ZK proof
@@ -78,13 +90,30 @@ export class CredentialProcessor {
       const zkProof = await generateZKProof(circuitInputs);
       this.updateProgress(3, zkProof);
 
+      let contractSubmission: ContractSubmissionResult | undefined;
+
+      // Steps 5 & 6: Validate and submit to blockchain (optional)
+      if (submitToContract) {
+        console.log("Steps 5-6: Validating and submitting to blockchain");
+        // The submitProofToContract function now handles both validation and submission
+        // The progress steps will be updated internally by the validation and submission process
+        contractSubmission = await submitProofToContract(zkProof, chainId);
+        this.updateProgress(4, { validation: "successful" }); // Mark validation step as complete
+        this.updateProgress(5, contractSubmission); // Mark submission step as complete
+      } else {
+        // Skip blockchain submission but mark both steps as completed
+        this.updateProgress(4, { skipped: true });
+        this.updateProgress(5, { skipped: true });
+      }
+
       console.log("All steps completed successfully!");
 
       return {
         credential,
-        signedCredential,
+        signedCredential: signedCredential as SignedVerifiableCredential,
         circuitInputs,
         zkProof,
+        contractSubmission,
       };
     } catch (error) {
       console.error("Error in credential processing:", error);
@@ -117,6 +146,14 @@ export class CredentialProcessor {
 
     // Download ZK proof
     downloadProof(result.zkProof, "zk_proof.json");
+
+    // Download transaction details if available
+    if (result.contractSubmission) {
+      downloadTransactionDetails(
+        result.contractSubmission,
+        "transaction_details.json"
+      );
+    }
   }
 
   getSteps(): ProcessingSteps[] {

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "anvil": "anvil --host 0.0.0.0 --port 8545 --chain-id 31337 --mnemonic 'test test test test test test test test test test test junk'",
+    "anvil:reset": "anvil --host 0.0.0.0 --port 8545 --chain-id 31337 --mnemonic 'test test test test test test test test test test test junk' --reset"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
@@ -16,6 +18,7 @@
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slot": "^1.2.3",
     "@tailwindcss/vite": "^4.1.11",
+    "@tanstack/react-query": "^5.85.3",
     "circomlibjs": "^0.1.7",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -28,6 +31,8 @@
     "snarkjs": "^0.7.5",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.11",
+    "viem": "^2.33.3",
+    "wagmi": "^2.16.3",
     "zod": "^4.0.17"
   },
   "devDependencies": {
