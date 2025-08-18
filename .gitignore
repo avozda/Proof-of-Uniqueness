@@ -214,6 +214,18 @@ target/
 **/circuits/build/
 
 # ================================
+# SMT PROVER PATTERNS
+# ================================
+
+# SMT Storage databases (RocksDB)
+**/smt_storage/
+src/prover/smt_storage/
+
+# SMT debug files
+**/debug_smt_db.json
+src/prover/debug_smt_db.json
+
+# ================================
 # ADDITIONAL PATTERNS
 # ================================
 

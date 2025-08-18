@@ -13,12 +13,12 @@ template SMTVerification () {
     signal input hashID;            // HashID to check for uniqueness and insert
     signal input oldRoot;           // Current SMT root
     signal input siblings[254];     // Merkle proof siblings for depth 254 (circomlib standard)
-    signal input oldKey;            // Key at the position where hashID should be inserted
-    signal input oldValue;          // Value at the position where hashID should be inserted
     
     // Outputs
     signal output newRoot;          // New SMT root after insertion
     signal output verifiedHashID;  // The hashID that was verified and inserted
+    signal output publicOldRoot;
+    
     
     // Step 1: Verify non-membership in SMT using the hashID
     component smtVerifier = SMTVerifier(254);
@@ -30,11 +30,11 @@ template SMTVerification () {
         smtVerifier.siblings[i] <== siblings[i];
     }
     
-    smtVerifier.oldKey <== oldKey;
-    smtVerifier.oldValue <== oldValue;
+    smtVerifier.oldKey <== 0; // Not used when isOld0 = 1 (empty position)
+    smtVerifier.oldValue <== 0; // Value at empty position
     smtVerifier.isOld0 <== 1; // Always 1 - proving the position is empty (uniqueness)
     smtVerifier.key <== hashID; // Use hashID as the key to check
-    smtVerifier.value <== 0; // Value doesn't matter for non-membership
+    smtVerifier.value <== 0; // Set to 0 for non-membership proof (value doesn't matter)
     smtVerifier.fnc <== 1; // 1 = verify non-inclusion
     
     // Step 2: Use SMT processor to calculate new root after insertion
@@ -46,8 +46,8 @@ template SMTVerification () {
         smtProcessor.siblings[i] <== siblings[i];
     }
     
-    smtProcessor.oldKey <== oldKey;
-    smtProcessor.oldValue <== oldValue;
+    smtProcessor.oldKey <== 0; // Not used when isOld0 = 1 (empty position)
+    smtProcessor.oldValue <== 0; // Should be 0 for empty position
     smtProcessor.isOld0 <== 1; // Always 1 - proving the position is empty
     smtProcessor.newKey <== hashID; // Insert the hashID as new key
     smtProcessor.newValue <== 1; // Mark as present with value 1
@@ -57,6 +57,7 @@ template SMTVerification () {
     // Outputs
     newRoot <== smtProcessor.newRoot;
     verifiedHashID <== hashID; // Output the hashID that was verified for uniqueness
+    publicOldRoot <== oldRoot;
 }
 
 component main = SMTVerification();
