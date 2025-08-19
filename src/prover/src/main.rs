@@ -3,12 +3,12 @@ use ethers::signers::{LocalWallet, Signer};
 use num_bigint::BigUint;
 use std::convert::TryFrom;
 use std::env;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 // Include the generated contract bindings
 mod identity_verification;
-use identity_verification::{HashIDClaimFilter, IdentityVerification};
+use identity_verification::{HashIDClaimFilter, HashIDInsertedFilter, IdentityVerification};
 
 // Include custom 254-bit sparse merkle tree
 mod smt;
@@ -21,38 +21,37 @@ use zk_proof::ZkProofGenerator;
 // Include debug module
 mod debug_db;
 
+/// Convert a U256 value to a 254-bit BigUint by masking the top 2 bits
+/// This ensures compatibility with the SMT which expects exactly 254-bit keys
+fn u256_to_254bit(value: U256) -> Result<BigUint, Box<dyn std::error::Error>> {
+    // Create a mask for 254 bits: 2^254 - 1
+    let mask = (BigUint::from(1u32) << 254) - BigUint::from(1u32);
+
+    // Convert U256 to BigUint
+    let big_uint = BigUint::parse_bytes(&format!("{:x}", value).as_bytes(), 16)
+        .ok_or("Failed to convert U256 to BigUint")?;
+
+    // Apply mask to ensure it's exactly 254 bits
+    Ok(big_uint & mask)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Starting HashIDClaim event listener...");
+    println!("🚀 Starting dual event listener system...");
 
     // Initialize the sparse merkle tree with persistent storage
-    println!("Initializing Sparse Merkle Tree...");
-    let mut smt = SparseMerkleTree::new("./smt_storage")?;
-    println!("Sparse Merkle Tree initialized successfully");
-
-    // Debug: Dump database content to JSON file
-    println!("\n🔧 Debug: Dumping database content...");
-    if let Err(e) = debug_db::dump_db_to_json("./smt_storage", "./debug_smt_db.json") {
-        println!("⚠️  Failed to dump database: {}", e);
-    }
-
-    // Debug: Print database summary to console
-    if let Err(e) = debug_db::print_db_summary("./smt_storage") {
-        println!("⚠️  Failed to print database summary: {}", e);
-    }
+    let smt = Arc::new(Mutex::new(SparseMerkleTree::new("./smt_storage")?));
+    let _ = debug_db::dump_db_to_json("./smt_storage", "./debug_smt_db.json");
+    let _ = debug_db::print_db_summary("./smt_storage");
 
     // Initialize ZK proof generator
-    println!("Initializing ZK Proof Generator...");
     let zk_generator = ZkProofGenerator::new()?;
-    println!("ZK Proof Generator initialized successfully");
 
-    // Connect to local Ethereum node via HTTP (we'll poll for events instead of subscription)
+    // Connect to local Ethereum node via HTTP
     let provider = Provider::<Http>::try_from("http://localhost:8545")?;
 
     // Set up wallet for transaction signing
     let private_key = env::var("PRIVATE_KEY").unwrap_or_else(|_| {
-        println!("⚠️  PRIVATE_KEY environment variable not set, using default test key");
-        // Default Hardhat test account #0 private key (DO NOT USE IN PRODUCTION!)
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string()
     });
 
@@ -60,66 +59,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chain_id = provider.get_chainid().await?;
     let wallet = wallet.with_chain_id(chain_id.as_u64());
 
-    println!("🔑 Using wallet address: {:?}", wallet.address());
-
     // Create a signing provider
     let client = SignerMiddleware::new(provider, wallet);
     let client = Arc::new(client);
 
-    // Contract address (you'll need to update this with your deployed contract address)
     let contract_address: Address = "0x5FbDB2315678afecb367f032d93F642f64180aa3".parse()?;
-
-    println!(
-        "Listening for HashIDClaim events from contract: {}",
-        contract_address
-    );
-
-    // Create contract instance with signer
     let contract = IdentityVerification::new(contract_address, client.clone());
 
-    // Get past events first
-    println!("Checking for past events...");
-    let events = contract
-        .event::<HashIDClaimFilter>()
-        .from_block(0)
-        .query()
-        .await?;
+    println!("📝 Contract: {}", contract_address);
+    println!("🚀 Starting dual event listeners:");
+    println!("   📝 HashIDClaim events -> Skip past, process NEW claims only");
+    println!("   🌳 HashIDInserted events -> Process ALL past + new to maintain tree state");
 
-    println!("Found {} past events", events.len());
+    // Start both event listeners concurrently
+    let hash_id_claim_task =
+        listen_for_hash_id_claim_events(contract.clone(), zk_generator, smt.clone());
+    let hash_id_inserted_task =
+        listen_for_hash_id_inserted_events(contract.clone(), smt.clone(), client);
 
-    for event in events {
-        println!("\n📜 Past HashIDClaim Event:");
-        println!(
-            "Public Signals: [{}]",
-            event
-                .pub_signals
-                .iter()
-                .map(|s| format!("0x{:x}", s))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        println!("----------------------------------------");
+    // Run both tasks concurrently
+    tokio::try_join!(hash_id_claim_task, hash_id_inserted_task)?;
 
-        // Process past events as well
-        match process_hash_id_claim_event(&event, &mut smt, &zk_generator, &contract).await {
-            Ok(_) => println!("✅ Successfully processed past HashIDClaim event"),
-            Err(e) => println!("❌ Error processing past HashIDClaim event: {}", e),
-        }
-    }
+    Ok(())
+}
 
-    // Poll for new events periodically
-    let mut last_block = client.get_block_number().await?;
+/// Listen for HashIDClaim events and process them by generating proofs and submitting to contract
+async fn listen_for_hash_id_claim_events(
+    contract: IdentityVerification<SignerMiddleware<Provider<Http>, LocalWallet>>,
+    zk_generator: ZkProofGenerator,
+    smt: Arc<Mutex<SparseMerkleTree>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Skip past HashIDClaim events - only process new ones
+    println!("📝 Skipping past HashIDClaim events, will only process new ones...");
+
+    // Listen for new events
+    let mut last_block = contract.client().get_block_number().await?;
     println!(
-        "Successfully connected! Polling for new HashIDClaim events from block {}...",
+        "📝 Listening for new HashIDClaim events from block {}...",
         last_block
     );
 
     loop {
         tokio::time::sleep(Duration::from_secs(2)).await;
 
-        let current_block = client.get_block_number().await?;
+        let current_block = contract.client().get_block_number().await?;
         if current_block > last_block {
-            // Check for new events in the new blocks
             match contract
                 .event::<HashIDClaimFilter>()
                 .from_block(last_block + 1)
@@ -129,34 +113,75 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             {
                 Ok(events) => {
                     for event in events {
-                        println!("\n🎉 NEW HashIDClaim Event Detected!");
-                        println!(
-                            "Public Signals: [{}]",
-                            event
-                                .pub_signals
-                                .iter()
-                                .map(|s| format!("0x{:x}", s))
-                                .collect::<Vec<_>>()
-                                .join(", ")
-                        );
-                        println!("----------------------------------------");
-
-                        // Process the event and generate SMT proof
-                        match process_hash_id_claim_event(
-                            &event,
-                            &mut smt,
-                            &zk_generator,
-                            &contract,
-                        )
-                        .await
+                        println!("📝 New HashIDClaim event detected!");
+                        if let Err(e) =
+                            process_hash_id_claim_event(&event, &smt, &zk_generator, &contract)
+                                .await
                         {
-                            Ok(_) => println!("✅ Successfully processed HashIDClaim event"),
-                            Err(e) => println!("❌ Error processing HashIDClaim event: {}", e),
+                            println!("❌ Error processing HashIDClaim event: {}", e);
                         }
                     }
                 }
                 Err(e) => {
-                    println!("Error fetching events: {}", e);
+                    println!("❌ Error querying HashIDClaim events: {}", e);
+                }
+            }
+            last_block = current_block;
+        }
+    }
+}
+
+/// Listen for HashIDInserted events and update local SMT
+async fn listen_for_hash_id_inserted_events(
+    contract: IdentityVerification<SignerMiddleware<Provider<Http>, LocalWallet>>,
+    smt: Arc<Mutex<SparseMerkleTree>>,
+    client: Arc<SignerMiddleware<Provider<Http>, LocalWallet>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Process ALL past HashIDInserted events to build current tree state
+    println!("🌳 Processing ALL past HashIDInserted events to rebuild tree state...");
+    let past_events = contract
+        .event::<HashIDInsertedFilter>()
+        .from_block(0)
+        .query()
+        .await?;
+
+    for event in past_events {
+        if let Err(e) = process_hash_id_inserted_event(&event, &smt, &contract).await {
+            println!("❌ Error processing past HashIDInserted event: {}", e);
+        }
+    }
+
+    // Listen for new events
+    let mut last_block = client.get_block_number().await?;
+    println!(
+        "🌳 Listening for new HashIDInserted events from block {}...",
+        last_block
+    );
+
+    loop {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        let current_block = client.get_block_number().await?;
+        if current_block > last_block {
+            match contract
+                .event::<HashIDInsertedFilter>()
+                .from_block(last_block + 1)
+                .to_block(current_block)
+                .query()
+                .await
+            {
+                Ok(events) => {
+                    for event in events {
+                        println!("🌳 New HashIDInserted event detected!");
+                        if let Err(e) =
+                            process_hash_id_inserted_event(&event, &smt, &contract).await
+                        {
+                            println!("❌ Error processing HashIDInserted event: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Error querying HashIDInserted events: {}", e);
                 }
             }
             last_block = current_block;
@@ -167,46 +192,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// Process a HashIDClaim event by generating an SMT proof and submitting to contract
 async fn process_hash_id_claim_event(
     event: &HashIDClaimFilter,
-    smt: &mut SparseMerkleTree,
+    smt: &Arc<Mutex<SparseMerkleTree>>,
     zk_generator: &ZkProofGenerator,
     contract: &IdentityVerification<SignerMiddleware<Provider<Http>, LocalWallet>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Extract hash_id from the event's public signals
     let hash_id_u256 = event.pub_signals[0];
-    let hash_id = BigUint::parse_bytes(&format!("{:x}", hash_id_u256).as_bytes(), 16)
-        .ok_or("Failed to convert U256 to BigUint")?;
+    let hash_id = u256_to_254bit(hash_id_u256)?;
 
-    println!("🔍 Processing HashID: {}", hash_id);
+    println!("📝 Processing HashID: 0x{:x}", hash_id_u256);
 
-    // Check if this hash_id has already been processed
-    if smt.is_hash_id_inserted(&hash_id)? {
-        println!("⚠️  HashID {} already processed, skipping", hash_id);
-        return Ok(());
-    }
-
-    // Get current SMT root
-    let old_root = smt.get_root_as_biguint();
-    println!("📍 Current SMT Root: {}", old_root);
-
-    // For now, let's use a zero root for non-membership proof in an empty tree
-    // This matches what the SMT circuit expects for proving non-existence
-    let empty_root = BigUint::from(0u32);
-    println!(
-        "📍 Using empty SMT root for non-membership proof: {}",
-        empty_root
-    );
-
-    // Generate siblings proof for the hash_id
-    println!("🔧 Generating siblings proof...");
-    let siblings = smt.generate_siblings_proof(&hash_id)?;
-
-    // Generate ZK proof for SMT verification
-    println!("🔐 Generating SMT ZK proof...");
+    let (current_root, siblings) = {
+        let mut smt_guard = smt.lock().unwrap();
+        let current_root = smt_guard.get_root_as_biguint();
+        let siblings = smt_guard.generate_siblings_proof(&hash_id)?;
+        (current_root, siblings)
+    };
     let (proof_a_smt, proof_b_smt, proof_c_smt, public_signals_smt) = zk_generator
-        .generate_smt_proof(&hash_id, &empty_root, &siblings)
+        .generate_smt_proof(&hash_id, &current_root, &siblings)
         .await?;
 
-    // Convert string arrays to the format expected by the contract
+    // Convert to contract format
     let proof_a_smt_u256: [U256; 2] = [
         U256::from_dec_str(&proof_a_smt[0])?,
         U256::from_dec_str(&proof_a_smt[1])?,
@@ -234,15 +239,6 @@ async fn process_hash_id_claim_event(
         U256::from_dec_str(&public_signals_smt[2])?, // old root from circuit (should be 0)
     ];
 
-    // Submit to contract using insertHashID function
-    println!("📤 Submitting to contract...");
-    println!("🔍 Contract validation details:");
-    println!("   HashID from original proof: 0x{:x}", hash_id_u256);
-    println!("   HashID from SMT proof: {}", public_signals_smt[1]);
-    println!("   Contract root: {}", old_root);
-    println!("   SMT proof old root: {}", public_signals_smt[2]);
-
-    // Use the original HashIDClaim proof data
     let tx = contract.insert_hash_id(
         event.p_a,
         event.p_b,
@@ -254,47 +250,66 @@ async fn process_hash_id_claim_event(
         public_signals_smt_u256,
     );
 
-    // Send the transaction to the blockchain
-    println!("📤 Sending transaction to blockchain...");
     match tx.send().await {
         Ok(pending_tx) => {
-            println!("✅ Transaction sent! Hash: {:?}", pending_tx.tx_hash());
-            println!("⏳ Waiting for confirmation...");
-
+            println!("✅ Transaction sent: {:?}", pending_tx.tx_hash());
             match pending_tx.await {
                 Ok(Some(receipt)) => {
-                    println!("🎉 Transaction confirmed!");
                     println!(
-                        "   📦 Block number: {}",
+                        "🎉 Transaction confirmed in block {}",
                         receipt.block_number.unwrap_or_default()
                     );
-                    println!("   ⛽ Gas used: {}", receipt.gas_used.unwrap_or_default());
-                    println!("   💰 Status: {:?}", receipt.status);
-
-                    // Update local SMT state after successful blockchain transaction
-                    let new_root = smt.insert_hash_id(&hash_id)?;
-                    println!("🌳 Updated local SMT Root: {}", new_root);
-
-                    println!("✅ Hash ID successfully submitted to smart contract!");
                 }
                 Ok(None) => {
-                    println!("⚠️  Transaction pending - no receipt yet");
+                    println!("⚠️  Transaction pending");
                 }
                 Err(e) => {
-                    println!("❌ Transaction failed: {}", e);
                     return Err(e.into());
                 }
             }
         }
         Err(e) => {
-            println!("❌ Failed to send transaction: {}", e);
-            println!("🔍 Possible causes:");
-            println!("   - Insufficient funds for gas");
-            println!("   - Contract validation failed");
-            println!("   - Network connection issues");
-            println!("   - Root mismatch between circuit and contract");
+            println!("❌ Transaction failed: {}", e);
             return Err(e.into());
         }
+    }
+
+    Ok(())
+}
+
+/// Process a HashIDInserted event by updating local SMT and verifying root consistency
+async fn process_hash_id_inserted_event(
+    event: &HashIDInsertedFilter,
+    smt: &Arc<Mutex<SparseMerkleTree>>,
+    contract: &IdentityVerification<SignerMiddleware<Provider<Http>, LocalWallet>>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let hash_id = u256_to_254bit(event.hash_id)?;
+    let contract_new_root = u256_to_254bit(event.new_root)?;
+
+    println!("🌳 Processing HashIDInserted: 0x{:x}", event.hash_id);
+    println!("   Contract new root: {}", contract_new_root);
+
+    // Update local SMT
+    let local_new_root = {
+        let mut smt_guard = smt.lock().unwrap();
+        smt_guard.insert_hash_id(&hash_id)?
+    };
+    println!("   Local new root: {}", local_new_root);
+
+    // Sync our local root with the contract root (contract is source of truth)
+    {
+        let mut smt_guard = smt.lock().unwrap();
+        smt_guard.set_root(&contract_new_root);
+    }
+    
+    // Verify root consistency
+    if local_new_root == contract_new_root {
+        println!("✅ Root consistency verified!");
+    } else {
+        println!("❌ ROOT MISMATCH! Syncing with contract root...");
+        println!("   Expected (contract): {}", contract_new_root);
+        println!("   Actual (local):      {}", local_new_root);
+        println!("✅ Local root synced with contract");
     }
 
     Ok(())

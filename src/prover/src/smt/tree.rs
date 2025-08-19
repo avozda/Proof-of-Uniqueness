@@ -1,5 +1,6 @@
 //! A module implementing `monotree`.
 use crate::smt::{lib::*, utils::*};
+use num_bigint::BigUint;
 
 /// A structure for `monotree`.
 #[derive(Debug)]
@@ -319,5 +320,59 @@ pub fn verify_proof<H: Hasher>(
             });
             root.expect("verify_proof(): root") == &hash
         }
+    }
+}
+
+impl<D, H> Monotree<D, H>
+where
+    D: Database,
+    H: Hasher,
+{
+    /// Hash internal node using circomlib SMTHash2
+    pub fn hash_internal_node(&self, left: &[u8], right: &[u8]) -> Hash {
+        self.hasher.smt_hash2_bytes(left, right)
+    }
+
+    /// Hash leaf node using circomlib SMTHash1
+    pub fn hash_leaf(&self, key: &BigUint, value: &BigUint) -> Hash {
+        let result = self.hasher.smt_hash1_bigint(key, value);
+        let result_bytes = result.to_bytes_be();
+        let mut hash = [0u8; HASH_LEN];
+        let len = std::cmp::min(result_bytes.len(), HASH_LEN);
+        hash[HASH_LEN - len..].copy_from_slice(&result_bytes[result_bytes.len() - len..]);
+        hash
+    }
+
+    /// Insert using circomlib-compatible hashing (binary SMT)
+    /// This bypasses monotree's path compression for circomlib compatibility
+    pub fn insert_circomlib(
+        &mut self,
+        _current_hash: &Hash,
+        key: &Hash,
+        value: &Hash,
+    ) -> Result<Option<Hash>> {
+        let key_bigint = BigUint::from_bytes_be(key);
+        let value_bigint = BigUint::from_bytes_be(value);
+
+        // Use circomlib SMTHash1 for leaf nodes
+        let leaf_hash_bigint = self.hasher.smt_hash1_bigint(&key_bigint, &value_bigint);
+        let leaf_hash_bytes = leaf_hash_bigint.to_bytes_be();
+        let mut leaf_hash = [0u8; HASH_LEN];
+        let len = std::cmp::min(leaf_hash_bytes.len(), HASH_LEN);
+        leaf_hash[HASH_LEN - len..]
+            .copy_from_slice(&leaf_hash_bytes[leaf_hash_bytes.len() - len..]);
+
+        // For now, return the leaf hash as the root (single element tree)
+        // TODO: Implement full binary SMT insertion logic
+        Ok(Some(leaf_hash))
+    }
+
+    /// Get circomlib-compatible siblings for SMT proof
+    /// Returns 254 siblings for the merkle proof path
+    pub fn get_circomlib_siblings(&mut self, _key: &Hash) -> Result<[BigUint; 254]> {
+        // For now, return all zeros (empty tree proof)
+        // TODO: Implement proper binary SMT siblings generation
+        let siblings = std::array::from_fn(|_| BigUint::from(0u32));
+        Ok(siblings)
     }
 }

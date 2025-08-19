@@ -17,8 +17,6 @@ pub fn dump_db_to_json<P: AsRef<Path>>(
         return Ok(());
     }
 
-    println!("🔍 Dumping custom 254-bit SMT database content...");
-
     // Open the RocksDB database
     let mut opts = Options::default();
     opts.create_if_missing(false); // Don't create, just read
@@ -123,11 +121,6 @@ pub fn dump_db_to_json<P: AsRef<Path>>(
     });
 
     fs::write(output_file, serde_json::to_string_pretty(&output)?)?;
-    println!("✅ Database content written to: {}", output_file);
-    println!(
-        "📊 Found {} total entries ({} leaves, {} nodes, {} other)",
-        stats["total_entries"], leaf_count, node_count, other_count
-    );
 
     Ok(())
 }
@@ -211,43 +204,4 @@ pub fn print_db_summary<P: AsRef<Path>>(db_path: P) -> Result<(), Box<dyn std::e
     println!("📝 Status: Ready for 254-bit SMT operations");
 
     Ok(())
-}
-
-/// Get the current SMT root from the database
-pub fn get_current_root<P: AsRef<Path>>(
-    db_path: P,
-) -> Result<Option<BigUint>, Box<dyn std::error::Error>> {
-    let path = db_path.as_ref();
-
-    if !path.exists() {
-        return Ok(None);
-    }
-
-    let mut opts = Options::default();
-    opts.create_if_missing(false);
-    let db = DB::open_for_read_only(&opts, path, false)?;
-
-    match db.get(b"_______monotree::headroot_______")? {
-        Some(root_bytes) => Ok(Some(BigUint::from_bytes_be(&root_bytes))),
-        None => Ok(None),
-    }
-}
-
-/// Check if a specific hash_id exists in the database
-pub fn check_hash_id_exists<P: AsRef<Path>>(
-    db_path: P,
-    hash_id: &BigUint,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let path = db_path.as_ref();
-
-    if !path.exists() {
-        return Ok(false);
-    }
-
-    let mut opts = Options::default();
-    opts.create_if_missing(false);
-    let db = DB::open_for_read_only(&opts, path, false)?;
-
-    let leaf_key = format!("leaf_{}", hash_id);
-    Ok(db.get(leaf_key.as_bytes())?.is_some())
 }

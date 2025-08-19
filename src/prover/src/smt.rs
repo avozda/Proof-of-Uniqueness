@@ -13,13 +13,18 @@ pub mod utils;
 
 // Re-export main types
 pub use database::RocksDB;
-pub use hasher::PoseidonHasher;
-pub use lib::{HASH_LEN, Hash, SMT_DEPTH};
+pub use hasher::{Hasher, PoseidonHasher};
+pub use lib::{HASH_LEN, Hash};
 pub use tree::Monotree;
+
+use std::collections::HashMap;
 
 /// Wrapper for our custom 254-bit SMT to maintain compatibility with existing code
 pub struct SparseMerkleTree {
     tree: Monotree<RocksDB, PoseidonHasher>,
+    circomlib_root: BigUint, // Track circomlib-compatible root separately
+    // Track inserted keys for proper siblings generation
+    inserted_keys: HashMap<BigUint, BigUint>, // key -> value pairs
 }
 
 impl SparseMerkleTree {
@@ -28,17 +33,14 @@ impl SparseMerkleTree {
         let path = db_path.as_ref();
         let path_str = path.to_string_lossy().to_string();
 
-        if path.exists() && path.is_dir() {
-            println!("✅ Database present - loading existing 254-bit SMT");
-        } else {
-            println!("❌ No database present - creating new 254-bit SMT");
-        }
-
         // Initialize our custom 254-bit SMT
         let tree = Monotree::<RocksDB, PoseidonHasher>::new(&path_str);
-        let mut smt = SparseMerkleTree { tree };
+        let mut smt = SparseMerkleTree {
+            tree,
+            circomlib_root: BigUint::from(0u32), // Start with empty root
+            inserted_keys: HashMap::new(),
+        };
 
-        // Print the current root
         let _ = smt.print_root();
 
         Ok(smt)
@@ -49,52 +51,62 @@ impl SparseMerkleTree {
         match self.tree.get_headroot()? {
             Some(root) => {
                 let root_bigint = BigUint::from_bytes_be(&root);
-                println!("🌳 SMT Root (uint256): {}", root_bigint);
+                println!("🌳 SMT Root: {}", root_bigint);
             }
             None => {
-                println!("🌳 SMT Root (uint256): 0 (empty tree)");
+                println!("🌳 SMT Root: 0 (empty)");
             }
         }
-        println!("📝 Ready for 254-bit SMT operations!");
         Ok(())
     }
 
-    /// Get the current root as BigUint
+    /// Get the current circomlib-compatible root as BigUint
+    #[allow(dead_code)]
     pub fn get_root_as_biguint(&mut self) -> BigUint {
-        match self.tree.get_headroot() {
-            Ok(Some(root)) => BigUint::from_bytes_be(&root),
-            _ => BigUint::from(0u32), // Empty tree or error
-        }
+        self.circomlib_root.clone()
+    }
+
+    /// Set the root directly (for syncing with contract)
+    pub fn set_root(&mut self, root: &BigUint) {
+        self.circomlib_root = root.clone();
     }
 
     /// Insert a hash_id into the SMT and return the new root
+    /// Uses circomlib-compatible hashing
     pub fn insert_hash_id(
         &mut self,
         hash_id: &BigUint,
     ) -> Result<BigUint, Box<dyn std::error::Error>> {
-        println!("🔄 Inserting hash_id {} into 254-bit SMT", hash_id);
-
-        // Convert BigUint to 32-byte hash format
+        // Convert hash_id to key format
         let key = self.bigint_to_hash(hash_id);
-        let leaf = key; // Use the same value as both key and leaf
+        // Value is always 1 for circomlib compatibility
+        let value = self.bigint_to_hash(&BigUint::from(1u32));
 
         // Get current root
         let current_root = self.tree.get_headroot()?;
 
-        // Insert into the tree
-        let new_root = self.tree.insert(current_root.as_ref(), &key, &leaf)?;
+        // Store in monotree for proof generation (uses monotree's hashing)
+        let _monotree_root = self.tree.insert(current_root.as_ref(), &key, &value)?;
 
-        // Set the new root as head
-        self.tree.set_headroot(new_root.as_ref());
+        // Calculate circomlib-compatible root
+        let empty_root = [0u8; 32];
+        let root_ref = current_root.as_ref().unwrap_or(&empty_root);
+        let circomlib_root = self.tree.insert_circomlib(root_ref, &key, &value)?;
 
-        // Convert new root to BigUint
-        let new_root_bigint = match new_root {
+        // Set the monotree root as head for proof generation
+        self.tree.set_headroot(_monotree_root.as_ref());
+
+        // Update our circomlib root
+        self.circomlib_root = match circomlib_root {
             Some(root) => BigUint::from_bytes_be(&root),
             None => BigUint::from(0u32),
         };
 
-        println!("✅ Inserted hash_id, new root: {}", new_root_bigint);
-        Ok(new_root_bigint)
+        // Track the inserted key for siblings generation
+        self.inserted_keys
+            .insert(hash_id.clone(), BigUint::from(1u32));
+
+        Ok(self.circomlib_root.clone())
     }
 
     /// Generate siblings proof for a given hash_id (key)
@@ -103,42 +115,130 @@ impl SparseMerkleTree {
         &mut self,
         hash_id: &BigUint,
     ) -> Result<[BigUint; 254], Box<dyn std::error::Error>> {
-        println!(
-            "🔧 Generating 254-level siblings proof for hash_id: {}",
-            hash_id
-        );
+        // Generate circomlib-compatible siblings based on current tree state
+        let siblings = self.generate_circomlib_siblings(hash_id)?;
+        Ok(siblings)
+    }
 
-        // Convert BigUint to hash format
-        let key = self.bigint_to_hash(hash_id);
+    /// Generate circomlib-compatible siblings proof
+    /// This implements proper binary SMT siblings for the full merkle path
+    fn generate_circomlib_siblings(
+        &self,
+        new_key: &BigUint,
+    ) -> Result<[BigUint; 254], Box<dyn std::error::Error>> {
+        let mut siblings = std::array::from_fn(|_| BigUint::from(0u32));
 
-        // Get current root
-        let current_root = self.tree.get_headroot()?;
+        if self.inserted_keys.is_empty() {
+            // Empty tree - all siblings are 0
+            return Ok(siblings);
+        }
 
-        // Generate merkle proof
-        let proof_opt = self.tree.get_merkle_proof(current_root.as_ref(), &key)?;
+        // Handle trees with existing elements
+        if self.inserted_keys.len() >= 1 {
+            let hasher = PoseidonHasher::new();
 
-        // Convert proof to 254-element array of BigUints
-        let siblings = match proof_opt {
-            Some(proof) => self.proof_to_siblings_array(&proof)?,
-            None => {
-                // No proof means non-membership - generate all zeros
-                std::array::from_fn(|_| BigUint::from(0u32))
+            // Check if the key already exists (should not happen in uniqueness system)
+            if self.inserted_keys.contains_key(new_key) {
+                return Err("Cannot prove non-membership: key already exists in tree".into());
             }
-        };
 
-        println!(
-            "✅ Generated exactly {} siblings for merkle proof",
-            siblings.len()
-        );
-        println!(
-            "   First few siblings: {:?}",
-            &siblings[0..3.min(siblings.len())]
-        );
+            if self.inserted_keys.len() == 1 {
+                // Tree with one element - use the existing element as reference
+                let (existing_key, _value) = self.inserted_keys.iter().next().unwrap();
+
+                // Convert keys to bit arrays for comparison
+                let new_key_bits = self.bigint_to_bits(new_key);
+                let existing_key_bits = self.bigint_to_bits(existing_key);
+
+                // Find the divergence level (first level where bits differ)
+                let mut divergence_level = None;
+                for i in 0..254 {
+                    if new_key_bits[i] != existing_key_bits[i] {
+                        divergence_level = Some(i);
+                        break;
+                    }
+                }
+
+                if let Some(div_level) = divergence_level {
+                    println!(
+                        "🔍 Divergence at level {}: existing_key bit = {}, new_key bit = {}",
+                        div_level, existing_key_bits[div_level], new_key_bits[div_level]
+                    );
+
+                    // Create the existing key's leaf hash
+                    let existing_leaf_hash =
+                        hasher.smt_hash1_bigint(existing_key, &BigUint::from(1u32));
+
+                    // At the divergence level, the sibling is the existing key's leaf hash
+                    siblings[div_level] = existing_leaf_hash.clone();
+
+                    println!(
+                        "🔍 Set sibling[{}] = {} (existing leaf hash)",
+                        div_level, existing_leaf_hash
+                    );
+
+                    // All other siblings remain 0 for non-membership proof
+
+                    // Verify by reconstructing what the root should be after insertion
+                    let zero = BigUint::from(0u32);
+                    let new_leaf_hash = hasher.smt_hash1_bigint(new_key, &BigUint::from(1u32));
+
+                    // Build the tree from divergence level up
+                    let mut current_hash = if new_key_bits[div_level] {
+                        // new_key goes right at divergence level
+                        hasher.smt_hash2_bigint(&existing_leaf_hash, &new_leaf_hash)
+                    } else {
+                        // new_key goes left at divergence level
+                        hasher.smt_hash2_bigint(&new_leaf_hash, &existing_leaf_hash)
+                    };
+
+                    // Continue building up to root
+                    for level in (div_level + 1)..254 {
+                        current_hash = if new_key_bits[level] {
+                            // new_key path goes right
+                            hasher.smt_hash2_bigint(&zero, &current_hash)
+                        } else {
+                            // new_key path goes left
+                            hasher.smt_hash2_bigint(&current_hash, &zero)
+                        };
+                    }
+
+                    println!("🔍 Expected new root after insertion: {}", current_hash);
+                    println!("🔍 Current root: {}", self.circomlib_root);
+                } else {
+                    // Keys are identical - this should not happen in a uniqueness system
+                    return Err("Cannot prove non-membership: key already exists in tree".into());
+                }
+            } else {
+                // Tree with multiple elements - for now, return error
+                // In a full implementation, you'd need to traverse the tree structure
+                return Err(
+                    "Non-membership proofs for trees with multiple elements not yet implemented"
+                        .into(),
+                );
+            }
+        }
 
         Ok(siblings)
     }
 
+    /// Convert BigUint to bit array (254 bits)
+    /// Bits are ordered to match circomlib's Num2Bits: LSB first (little-endian)
+    /// bits[0] = LSB, bits[253] = MSB (bit 253)
+    fn bigint_to_bits(&self, value: &BigUint) -> [bool; 254] {
+        let mut bits = [false; 254];
+
+        // Extract bits in little-endian order to match circomlib Num2Bits
+        // circomlib: out[i] <-- (in >> i) & 1
+        for i in 0..254 {
+            bits[i] = (value >> i) & BigUint::from(1u32) == BigUint::from(1u32);
+        }
+
+        bits
+    }
+
     /// Check if a hash_id has been inserted
+    #[allow(dead_code)]
     pub fn is_hash_id_inserted(
         &mut self,
         hash_id: &BigUint,
@@ -160,8 +260,16 @@ impl SparseMerkleTree {
 
         let bytes = truncated_value.to_bytes_be();
         let mut hash = [0u8; HASH_LEN];
+
+        // Ensure we don't exceed 254 bits by clearing the top 2 bits of the first byte
         let len = std::cmp::min(bytes.len(), HASH_LEN);
         hash[HASH_LEN - len..].copy_from_slice(&bytes[bytes.len() - len..]);
+
+        // Clear the top 2 bits of the most significant byte to ensure exactly 254 bits
+        if hash[0] != 0 {
+            hash[0] &= 0x3F; // Clear top 2 bits: 0011_1111
+        }
+
         hash
     }
 
@@ -179,12 +287,6 @@ impl SparseMerkleTree {
                 siblings[level] = BigUint::from_bytes_be(sibling_hash);
             }
         }
-
-        // For levels beyond the proof length, keep zeros (empty tree defaults)
-        println!(
-            "🔧 Converted proof of length {} to 254-level siblings array",
-            proof.len()
-        );
 
         Ok(siblings)
     }

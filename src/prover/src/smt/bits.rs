@@ -12,9 +12,13 @@ pub struct Bits<'a> {
 
 impl<'a> Bits<'a> {
     pub fn new(bytes: &'a [u8]) -> Self {
+        let total_bits = bytes.len() as BitsLen * 8;
+        // Cap at 254 bits for SMT compatibility
+        let max_bits = std::cmp::min(total_bits, 254);
+
         Bits {
             path: bytes,
-            range: 0..(bytes.len() as BitsLen * 8),
+            range: 0..max_bits,
         }
     }
 
@@ -77,6 +81,15 @@ impl<'a> Bits<'a> {
     pub fn bit(&self, i: BitsLen) -> bool {
         assert!(i < self.len(), "Bit index out of range");
         bit(self.path, self.range.start + i)
+    }
+
+    /// Get a specific bit at position `pos` (convenience method)
+    pub fn get_bit(&self, pos: BitsLen) -> bool {
+        if pos >= self.len() {
+            false
+        } else {
+            self.bit(pos)
+        }
     }
 
     /// Compare bits lexicographically (MSB to LSB)

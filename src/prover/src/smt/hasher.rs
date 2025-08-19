@@ -9,6 +9,11 @@ use poseidon_rs::{Fr, Poseidon};
 pub trait Hasher {
     fn new() -> Self;
     fn digest(&self, bytes: &[u8]) -> Hash;
+
+    // Circomlib-compatible hashing methods
+    fn smt_hash1_bigint(&self, key: &BigUint, value: &BigUint) -> BigUint;
+    fn smt_hash2_bigint(&self, left: &BigUint, right: &BigUint) -> BigUint;
+    fn smt_hash2_bytes(&self, left: &[u8], right: &[u8]) -> Hash;
 }
 
 /// A hasher using `Poseidon` hash function optimized for ZK-SNARKs
@@ -55,6 +60,40 @@ impl Hasher for PoseidonHasher {
         let len = std::cmp::min(result_bytes.len(), HASH_LEN);
         hash[HASH_LEN - len..].copy_from_slice(&result_bytes[result_bytes.len() - len..]);
 
+        hash
+    }
+
+    /// Circomlib SMTHash1: H(key, value, 1) for leaf nodes
+    fn smt_hash1_bigint(&self, key: &BigUint, value: &BigUint) -> BigUint {
+        let key_fr = Self::bigint_to_fr(key);
+        let value_fr = Self::bigint_to_fr(value);
+        let one_fr = Fr::from_str("1").unwrap();
+
+        let inputs = vec![key_fr, value_fr, one_fr];
+        let result_fr = self.poseidon.hash(inputs).expect("SMT Hash1 failed");
+        Self::fr_to_bigint(&result_fr)
+    }
+
+    /// Circomlib SMTHash2: H(left, right) for internal nodes
+    fn smt_hash2_bigint(&self, left: &BigUint, right: &BigUint) -> BigUint {
+        let left_fr = Self::bigint_to_fr(left);
+        let right_fr = Self::bigint_to_fr(right);
+
+        let inputs = vec![left_fr, right_fr];
+        let result_fr = self.poseidon.hash(inputs).expect("SMT Hash2 failed");
+        Self::fr_to_bigint(&result_fr)
+    }
+
+    /// SMTHash2 for byte arrays (wrapper for compatibility)
+    fn smt_hash2_bytes(&self, left: &[u8], right: &[u8]) -> Hash {
+        let left_bigint = BigUint::from_bytes_be(left);
+        let right_bigint = BigUint::from_bytes_be(right);
+        let result = self.smt_hash2_bigint(&left_bigint, &right_bigint);
+
+        let result_bytes = result.to_bytes_be();
+        let mut hash = [0u8; HASH_LEN];
+        let len = std::cmp::min(result_bytes.len(), HASH_LEN);
+        hash[HASH_LEN - len..].copy_from_slice(&result_bytes[result_bytes.len() - len..]);
         hash
     }
 }
