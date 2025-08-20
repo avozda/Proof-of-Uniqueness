@@ -146,7 +146,7 @@ async fn listen_for_hash_id_inserted_events(
         .await?;
 
     for event in past_events {
-        if let Err(e) = process_hash_id_inserted_event(&event, &smt, &contract).await {
+        if let Err(e) = process_hash_id_inserted_event(&event, &smt).await {
             println!("❌ Error processing past HashIDInserted event: {}", e);
         }
     }
@@ -173,9 +173,7 @@ async fn listen_for_hash_id_inserted_events(
                 Ok(events) => {
                     for event in events {
                         println!("🌳 New HashIDInserted event detected!");
-                        if let Err(e) =
-                            process_hash_id_inserted_event(&event, &smt, &contract).await
-                        {
+                        if let Err(e) = process_hash_id_inserted_event(&event, &smt).await {
                             println!("❌ Error processing HashIDInserted event: {}", e);
                         }
                     }
@@ -281,7 +279,6 @@ async fn process_hash_id_claim_event(
 async fn process_hash_id_inserted_event(
     event: &HashIDInsertedFilter,
     smt: &Arc<Mutex<SparseMerkleTree>>,
-    contract: &IdentityVerification<SignerMiddleware<Provider<Http>, LocalWallet>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let hash_id = u256_to_254bit(event.hash_id)?;
     let contract_new_root = u256_to_254bit(event.new_root)?;
@@ -296,12 +293,6 @@ async fn process_hash_id_inserted_event(
     };
     println!("   Local new root: {}", local_new_root);
 
-    // Sync our local root with the contract root (contract is source of truth)
-    {
-        let mut smt_guard = smt.lock().unwrap();
-        smt_guard.set_root(&contract_new_root);
-    }
-    
     // Verify root consistency
     if local_new_root == contract_new_root {
         println!("✅ Root consistency verified!");

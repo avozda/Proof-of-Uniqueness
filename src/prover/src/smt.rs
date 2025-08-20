@@ -66,11 +66,6 @@ impl SparseMerkleTree {
         self.circomlib_root.clone()
     }
 
-    /// Set the root directly (for syncing with contract)
-    pub fn set_root(&mut self, root: &BigUint) {
-        self.circomlib_root = root.clone();
-    }
-
     /// Insert a hash_id into the SMT and return the new root
     /// Uses circomlib-compatible hashing
     pub fn insert_hash_id(
@@ -121,103 +116,23 @@ impl SparseMerkleTree {
     }
 
     /// Generate circomlib-compatible siblings proof
-    /// This implements proper binary SMT siblings for the full merkle path
+    /// This delegates to the tree's binary SMT siblings generation
     fn generate_circomlib_siblings(
-        &self,
+        &mut self,
         new_key: &BigUint,
     ) -> Result<[BigUint; 254], Box<dyn std::error::Error>> {
-        let mut siblings = std::array::from_fn(|_| BigUint::from(0u32));
-
-        if self.inserted_keys.is_empty() {
-            // Empty tree - all siblings are 0
-            return Ok(siblings);
+        // Check if the key already exists (should not happen in uniqueness system)
+        if self.inserted_keys.contains_key(new_key) {
+            return Err("Cannot prove non-membership: key already exists in tree".into());
         }
 
-        // Handle trees with existing elements
-        if self.inserted_keys.len() >= 1 {
-            let hasher = PoseidonHasher::new();
+        // Convert key to hash format for tree operations
+        let key_hash = self.bigint_to_hash(new_key);
 
-            // Check if the key already exists (should not happen in uniqueness system)
-            if self.inserted_keys.contains_key(new_key) {
-                return Err("Cannot prove non-membership: key already exists in tree".into());
-            }
-
-            if self.inserted_keys.len() == 1 {
-                // Tree with one element - use the existing element as reference
-                let (existing_key, _value) = self.inserted_keys.iter().next().unwrap();
-
-                // Convert keys to bit arrays for comparison
-                let new_key_bits = self.bigint_to_bits(new_key);
-                let existing_key_bits = self.bigint_to_bits(existing_key);
-
-                // Find the divergence level (first level where bits differ)
-                let mut divergence_level = None;
-                for i in 0..254 {
-                    if new_key_bits[i] != existing_key_bits[i] {
-                        divergence_level = Some(i);
-                        break;
-                    }
-                }
-
-                if let Some(div_level) = divergence_level {
-                    println!(
-                        "🔍 Divergence at level {}: existing_key bit = {}, new_key bit = {}",
-                        div_level, existing_key_bits[div_level], new_key_bits[div_level]
-                    );
-
-                    // Create the existing key's leaf hash
-                    let existing_leaf_hash =
-                        hasher.smt_hash1_bigint(existing_key, &BigUint::from(1u32));
-
-                    // At the divergence level, the sibling is the existing key's leaf hash
-                    siblings[div_level] = existing_leaf_hash.clone();
-
-                    println!(
-                        "🔍 Set sibling[{}] = {} (existing leaf hash)",
-                        div_level, existing_leaf_hash
-                    );
-
-                    // All other siblings remain 0 for non-membership proof
-
-                    // Verify by reconstructing what the root should be after insertion
-                    let zero = BigUint::from(0u32);
-                    let new_leaf_hash = hasher.smt_hash1_bigint(new_key, &BigUint::from(1u32));
-
-                    // Build the tree from divergence level up
-                    let mut current_hash = if new_key_bits[div_level] {
-                        // new_key goes right at divergence level
-                        hasher.smt_hash2_bigint(&existing_leaf_hash, &new_leaf_hash)
-                    } else {
-                        // new_key goes left at divergence level
-                        hasher.smt_hash2_bigint(&new_leaf_hash, &existing_leaf_hash)
-                    };
-
-                    // Continue building up to root
-                    for level in (div_level + 1)..254 {
-                        current_hash = if new_key_bits[level] {
-                            // new_key path goes right
-                            hasher.smt_hash2_bigint(&zero, &current_hash)
-                        } else {
-                            // new_key path goes left
-                            hasher.smt_hash2_bigint(&current_hash, &zero)
-                        };
-                    }
-
-                    println!("🔍 Expected new root after insertion: {}", current_hash);
-                    println!("🔍 Current root: {}", self.circomlib_root);
-                } else {
-                    // Keys are identical - this should not happen in a uniqueness system
-                    return Err("Cannot prove non-membership: key already exists in tree".into());
-                }
-            } else {
-                // Tree with multiple elements - for now, return error
-                // In a full implementation, you'd need to traverse the tree structure
-                return Err(
-                    "Non-membership proofs for trees with multiple elements not yet implemented"
-                        .into(),
-                );
-            }
-        }
+        // Use the tree's circomlib siblings generation
+        let siblings = self
+            .tree
+            .get_circomlib_siblings(&key_hash, &self.inserted_keys)?;
 
         Ok(siblings)
     }
