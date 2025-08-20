@@ -11,8 +11,8 @@ mod identity_verification;
 use identity_verification::{HashIDClaimFilter, HashIDInsertedFilter, IdentityVerification};
 
 // Include custom 254-bit sparse merkle tree
-mod smt;
-use smt::SparseMerkleTree;
+mod new_smt;
+use new_smt::SparseMerkleTree;
 
 // Include ZK proof generation module
 mod zk_proof;
@@ -198,6 +198,8 @@ async fn process_hash_id_claim_event(
     let hash_id = u256_to_254bit(hash_id_u256)?;
 
     println!("📝 Processing HashID: 0x{:x}", hash_id_u256);
+    println!("📢 HashIDClaim public signals (index → name = value):");
+    println!("   [0] IDHash = {}", hash_id_u256);
 
     let (current_root, siblings) = {
         let mut smt_guard = smt.lock().unwrap();
@@ -236,6 +238,11 @@ async fn process_hash_id_claim_event(
         U256::from_dec_str(&public_signals_smt[1])?, // verified hash_id
         U256::from_dec_str(&public_signals_smt[2])?, // old root from circuit (should be 0)
     ];
+
+    println!("📢 SMTVerification public signals (index → name = value):");
+    println!("   [0] newRoot = {}", public_signals_smt[0]);
+    println!("   [1] verifiedHashID = {}", public_signals_smt[1]);
+    println!("   [2] publicOldRoot = {}", public_signals_smt[2]);
 
     let tx = contract.insert_hash_id(
         event.p_a,

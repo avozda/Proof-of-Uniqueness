@@ -136,7 +136,18 @@ impl ZkProofGenerator {
         let _ = fs::remove_file(public_path);
 
         println!("✅ ZK proof generated successfully!");
-        println!("📊 Public signals: {:?}", public_signals);
+        println!("📢 SMTVerification public signals (index → name = value):");
+        if public_signals.len() >= 3 {
+            println!("   [0] newRoot = {}", public_signals[0]);
+            println!("   [1] verifiedHashID = {}", public_signals[1]);
+            println!("   [2] publicOldRoot = {}", public_signals[2]);
+        } else {
+            println!(
+                "   (unexpected length: {}) -> {:?}",
+                public_signals.len(),
+                public_signals
+            );
+        }
 
         Ok((proof_a, proof_b, proof_c, public_signals))
     }
