@@ -12,14 +12,14 @@ const localhost = {
     symbol: "ETH",
   },
   rpcUrls: {
-    default: { http: ["http://127.0.0.1:8545"] },
+    default: { http: ["http://localhost:8545"] }, // Use localhost instead of 127.0.0.1
   },
 };
 
 export const config = createConfig({
   chains: [localhost],
   transports: {
-    [localhost.id]: http(),
+    [localhost.id]: http("http://localhost:8545"), // Explicit HTTP URL
   },
   connectors: [
     injected({

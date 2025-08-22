@@ -10,5 +10,26 @@ out/
 # Docs
 docs/
 
-# Dotenv file
+# Environment variables
 .env
+.env.local
+.env.production
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Gas reports
+gas-report.txt
+.gas-snapshot
+
+# Coverage reports
+coverage/
+coverage.json
+lcov.info
