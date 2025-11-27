@@ -1,0 +1,238 @@
+export const proofOfUniquenessAbi = [
+  {
+    type: "constructor",
+    inputs: [{ name: "_verifier", type: "address", internalType: "address" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "addOwner",
+    inputs: [{ name: "owner", type: "address", internalType: "address" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "addTrustedIssuer",
+    inputs: [
+      { name: "pubKeyX", type: "uint256", internalType: "uint256" },
+      { name: "pubKeyY", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "enroll",
+    inputs: [
+      { name: "_pA", type: "uint256[2]", internalType: "uint256[2]" },
+      { name: "_pB", type: "uint256[2][2]", internalType: "uint256[2][2]" },
+      { name: "_pC", type: "uint256[2]", internalType: "uint256[2]" },
+      { name: "_pubSignals", type: "uint256[8]", internalType: "uint256[8]" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "getIdentity",
+    inputs: [{ name: "hashID", type: "uint256", internalType: "uint256" }],
+    outputs: [
+      {
+        name: "record",
+        type: "tuple",
+        internalType: "struct ProofOfUniqueness.IdentityRecord",
+        components: [
+          { name: "validUntil", type: "uint256", internalType: "uint256" },
+          { name: "issuerPubKeyX", type: "uint256", internalType: "uint256" },
+          { name: "issuerPubKeyY", type: "uint256", internalType: "uint256" },
+          {
+            name: "verificationKeyX",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          {
+            name: "verificationKeyY",
+            type: "uint256",
+            internalType: "uint256",
+          },
+          { name: "sketchHash", type: "uint256", internalType: "uint256" },
+          { name: "exists", type: "bool", internalType: "bool" },
+        ],
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getIdentityCount",
+    inputs: [],
+    outputs: [{ name: "count", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getSketchHash",
+    inputs: [{ name: "hashID", type: "uint256", internalType: "uint256" }],
+    outputs: [{ name: "sketchHash", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getVerificationKey",
+    inputs: [{ name: "hashID", type: "uint256", internalType: "uint256" }],
+    outputs: [
+      { name: "vkX", type: "uint256", internalType: "uint256" },
+      { name: "vkY", type: "uint256", internalType: "uint256" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "identities",
+    inputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    outputs: [
+      { name: "validUntil", type: "uint256", internalType: "uint256" },
+      { name: "issuerPubKeyX", type: "uint256", internalType: "uint256" },
+      { name: "issuerPubKeyY", type: "uint256", internalType: "uint256" },
+      { name: "verificationKeyX", type: "uint256", internalType: "uint256" },
+      { name: "verificationKeyY", type: "uint256", internalType: "uint256" },
+      { name: "sketchHash", type: "uint256", internalType: "uint256" },
+      { name: "exists", type: "bool", internalType: "bool" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "isIdentityValid",
+    inputs: [{ name: "hashID", type: "uint256", internalType: "uint256" }],
+    outputs: [{ name: "isValid", type: "bool", internalType: "bool" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "isIssuerTrusted",
+    inputs: [
+      { name: "pubKeyX", type: "uint256", internalType: "uint256" },
+      { name: "pubKeyY", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [{ name: "isTrusted", type: "bool", internalType: "bool" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "owners",
+    inputs: [{ name: "", type: "address", internalType: "address" }],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "registeredHashIDs",
+    inputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "removeOwner",
+    inputs: [{ name: "owner", type: "address", internalType: "address" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "removeTrustedIssuer",
+    inputs: [
+      { name: "pubKeyX", type: "uint256", internalType: "uint256" },
+      { name: "pubKeyY", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "trustedIssuers",
+    inputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "verifier",
+    inputs: [],
+    outputs: [
+      { name: "", type: "address", internalType: "contract Groth16Verifier" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "event",
+    name: "IdentityEnrolled",
+    inputs: [
+      { name: "hashID", type: "uint256", indexed: true, internalType: "uint256" },
+      {
+        name: "issuerPubKeyHash",
+        type: "uint256",
+        indexed: true,
+        internalType: "uint256",
+      },
+      {
+        name: "validUntil",
+        type: "uint256",
+        indexed: false,
+        internalType: "uint256",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "IssuerAdded",
+    inputs: [
+      {
+        name: "issuerPubKeyHash",
+        type: "uint256",
+        indexed: true,
+        internalType: "uint256",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "IssuerRemoved",
+    inputs: [
+      {
+        name: "issuerPubKeyHash",
+        type: "uint256",
+        indexed: true,
+        internalType: "uint256",
+      },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "OwnerAdded",
+    inputs: [
+      { name: "owner", type: "address", indexed: true, internalType: "address" },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "OwnerRemoved",
+    inputs: [
+      { name: "owner", type: "address", indexed: true, internalType: "address" },
+    ],
+    anonymous: false,
+  },
+  { type: "error", name: "IdentityAlreadyExists", inputs: [] },
+  { type: "error", name: "IdentityExpired", inputs: [] },
+  { type: "error", name: "IdentityNotFound", inputs: [] },
+  { type: "error", name: "InvalidProof", inputs: [] },
+  { type: "error", name: "IssuerNotTrusted", inputs: [] },
+  { type: "error", name: "NotOwner", inputs: [] },
+] as const;
+
