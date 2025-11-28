@@ -50,6 +50,13 @@ contract ProofOfUniqueness {
     event IssuerRemoved(uint256 indexed issuerPubKeyHash);
     event OwnerAdded(address indexed owner);
     event OwnerRemoved(address indexed owner);
+    event IdentityPurged(uint256 indexed hashID, PurgeReason reason);
+
+    /// @notice Reason for identity purge
+    enum PurgeReason {
+        Expired,
+        UntrustedIssuer
+    }
 
     // ============ Errors ============
 
@@ -266,5 +273,153 @@ contract ProofOfUniqueness {
     function removeOwner(address owner) external onlyOwner {
         owners[owner] = false;
         emit OwnerRemoved(owner);
+    }
+
+    /**
+     * @notice Remove all invalid identity records (expired or from untrusted issuers)
+     * @dev Processes in batches to avoid gas limit issues. Call repeatedly until returns 0.
+     * @param maxIterations Maximum number of records to check in this call (0 = check all)
+     * @return purgedCount Number of records purged in this call
+     * @return remainingCount Number of records still to check
+     */
+    function purgeInvalidRecords(
+        uint256 maxIterations
+    ) external onlyOwner returns (uint256 purgedCount, uint256 remainingCount) {
+        uint256 length = registeredHashIDs.length;
+        if (length == 0) return (0, 0);
+
+        uint256 iterations = maxIterations == 0 ? length : maxIterations;
+        uint256 i = 0;
+
+        while (i < length && iterations > 0) {
+            uint256 hashID = registeredHashIDs[i];
+            IdentityRecord storage record = identities[hashID];
+
+            bool shouldPurge = false;
+            PurgeReason reason;
+
+            // Check if expired
+            if (block.timestamp > record.validUntil) {
+                shouldPurge = true;
+                reason = PurgeReason.Expired;
+            } else {
+                // Check if issuer is no longer trusted
+                uint256 issuerPubKeyHash = uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            record.issuerPubKeyX,
+                            record.issuerPubKeyY
+                        )
+                    )
+                );
+                if (!trustedIssuers[issuerPubKeyHash]) {
+                    shouldPurge = true;
+                    reason = PurgeReason.UntrustedIssuer;
+                }
+            }
+
+            if (shouldPurge) {
+                // Delete the identity record
+                delete identities[hashID];
+
+                // Swap with last element and pop (O(1) removal)
+                uint256 lastIndex = length - 1;
+                if (i != lastIndex) {
+                    registeredHashIDs[i] = registeredHashIDs[lastIndex];
+                }
+                registeredHashIDs.pop();
+                length--;
+
+                purgedCount++;
+                emit IdentityPurged(hashID, reason);
+                // Don't increment i - we need to check the swapped element
+            } else {
+                i++;
+            }
+
+            iterations--;
+        }
+
+        remainingCount = length - i;
+        return (purgedCount, remainingCount);
+    }
+
+    /**
+     * @notice Check how many records are invalid (for gas estimation before purge)
+     * @return expiredCount Number of expired records
+     * @return untrustedCount Number of records from untrusted issuers
+     */
+    function countInvalidRecords()
+        external
+        view
+        returns (uint256 expiredCount, uint256 untrustedCount)
+    {
+        uint256 length = registeredHashIDs.length;
+
+        for (uint256 i = 0; i < length; i++) {
+            uint256 hashID = registeredHashIDs[i];
+            IdentityRecord storage record = identities[hashID];
+
+            if (block.timestamp > record.validUntil) {
+                expiredCount++;
+            } else {
+                uint256 issuerPubKeyHash = uint256(
+                    keccak256(
+                        abi.encodePacked(
+                            record.issuerPubKeyX,
+                            record.issuerPubKeyY
+                        )
+                    )
+                );
+                if (!trustedIssuers[issuerPubKeyHash]) {
+                    untrustedCount++;
+                }
+            }
+        }
+    }
+
+    /**
+     * @notice Purge a specific identity by hashID
+     * @dev Useful when you know which specific record to remove
+     * @param hashID The identity hash ID to purge
+     */
+    function purgeIdentity(uint256 hashID) external onlyOwner {
+        IdentityRecord storage record = identities[hashID];
+        if (!record.exists) revert IdentityNotFound();
+
+        // Determine the reason
+        PurgeReason reason;
+        if (block.timestamp > record.validUntil) {
+            reason = PurgeReason.Expired;
+        } else {
+            uint256 issuerPubKeyHash = uint256(
+                keccak256(
+                    abi.encodePacked(record.issuerPubKeyX, record.issuerPubKeyY)
+                )
+            );
+            if (!trustedIssuers[issuerPubKeyHash]) {
+                reason = PurgeReason.UntrustedIssuer;
+            } else {
+                revert("Identity is still valid");
+            }
+        }
+
+        // Delete the identity record
+        delete identities[hashID];
+
+        // Find and remove from array
+        uint256 length = registeredHashIDs.length;
+        for (uint256 i = 0; i < length; i++) {
+            if (registeredHashIDs[i] == hashID) {
+                // Swap with last and pop
+                if (i != length - 1) {
+                    registeredHashIDs[i] = registeredHashIDs[length - 1];
+                }
+                registeredHashIDs.pop();
+                break;
+            }
+        }
+
+        emit IdentityPurged(hashID, reason);
     }
 }
