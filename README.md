@@ -11,51 +11,68 @@
   <img src="https://img.shields.io/badge/Circom-2.2.2-orange" alt="Circom" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react" alt="React" />
   <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript" alt="TypeScript" />
-  <img src="https://img.shields.io/badge/License-ISC-green" alt="License" />
+  <img src="https://img.shields.io/badge/License-GPL--3.0-green" alt="License" />
 </p>
 
 ---
 
 ## Overview
 
-**Proof of Uniqueness** enables users to create verifiable identity credentials from biometric data without revealing the biometric itself. The system combines:
+**Proof of Uniqueness** allows users to enroll their identity on-chain using Verifiable Credentials issued by trusted authorities — without revealing any private information. The system verifies credentials using zero-knowledge proofs, ensuring only the validity of the credential is proven while personal data remains private.
 
-- **Fuzzy Extractors** — Derive stable cryptographic keys from noisy biometric inputs
-- **Zero-Knowledge Proofs** — Prove credential validity without revealing private data
-- **W3C Verifiable Credentials** — Industry-standard credential format with EdDSA Poseidon signatures
-- **On-chain Verification** — Ethereum smart contracts for decentralized identity enrollment
+### Key Concepts
 
-### How It Works
+- **Trusted Issuers** — Government agencies or identity providers issue W3C Verifiable Credentials with biometric data
+- **Zero-Knowledge Proofs** — Users prove credential validity without revealing private fields
+- **On-chain Enrollment** — Smart contracts store only a privacy-preserving hash (HashID) and verification metadata
+- **Sybil Resistance** — Each identity can only enroll once, preventing duplicate registrations
+
+### System Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                           ENROLLMENT FLOW                                │
+│                         PRODUCTION FLOW                                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│   Biometric ──► Fuzzy Extractor ──► Sketch + Verification Key           │
-│       │                                      │                           │
-│       ▼                                      ▼                           │
-│   Identity ──► VC Generator ──► Signed Credential (EdDSA Poseidon)      │
-│     Data                              │                                  │
-│                                       ▼                                  │
-│                              ZK Proof Generator (Groth16)                │
-│                                       │                                  │
-│                                       ▼                                  │
-│                              Smart Contract (enroll)                     │
-│                                       │                                  │
-│                                       ▼                                  │
-│                              On-chain Identity Record                    │
+│   ┌──────────────────────┐                                               │
+│   │   TRUSTED ISSUER     │                                               │
+│   │  (Government, eID)   │                                               │
+│   └──────────┬───────────┘                                               │
+│              │                                                           │
+│              ▼                                                           │
+│   Verifiable Credential (VC)                                             │
+│   • Identity fields (name, DOB, nationality)                             │
+│   • Biometric sketch + verification key                                  │
+│   • EdDSA Poseidon signature                                             │
+│              │                                                           │
+│              ▼                                                           │
+│   ┌──────────────────────┐                                               │
+│   │        USER          │                                               │
+│   │  (with existing VC)  │                                               │
+│   └──────────┬───────────┘                                               │
+│              │                                                           │
+│              ▼                                                           │
+│   ZK Proof Generator (Groth16)  ──► Proves VC validity                   │
+│              │                                                           │
+│              ▼                                                           │
+│   Smart Contract (enroll)                                                │
+│              │                                                           │
+│              ▼                                                           │
+│   On-chain Identity Record                                               │
+│   • HashID (privacy-preserving)                                          │
+│   • Issuer public key                                                    │
+│   • Expiration, sketch hash, verification key                            │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Features
 
-- **Privacy-Preserving** — Biometric data never leaves the client; only ZK proofs are submitted
+- **Privacy-Preserving** — Personal data never leaves the client; only ZK proofs are submitted
 - **Sybil Resistance** — Each identity can only enroll once (enforced by HashID)
 - **Issuer Trust Model** — Smart contract maintains whitelist of trusted credential issuers
 - **Expiration Support** — Credentials have validity periods enforced on-chain
-- **Biometric Recovery** — Fuzzy extractors allow key recovery from slightly different biometric readings
+- **Biometric Binding** — Fuzzy extractors bind credentials to biometric data for secure recovery
 
 ## Project Structure
 
@@ -65,7 +82,7 @@ src/
 │   ├── Enrollment.circom     # Main enrollment circuit
 │   └── build/                # Compiled circuits (wasm, zkey, r1cs)
 │
-├── client/                   # React web application
+├── client/                   # Demo application (for testing)
 │   ├── src/
 │   │   ├── components/       # UI components
 │   │   └── lib/              # Core libraries (DID, VC, proof, biometrics)
@@ -112,18 +129,21 @@ cd src/ecdsa-fuzzy-signature && npm install && npm run build && cd ../..
 cd src/smart-contracts && forge install && cd ../..
 ```
 
-## Quick Start
+## Demo Application
 
-### 1. Start the Client
+The client application includes a **mock credential generator** for testing and development purposes. In production, users would arrive with pre-issued Verifiable Credentials from trusted issuers.
+
+### Running the Demo
 
 ```bash
+# Start the demo client
 cd src/client
 npm run dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173) in your browser.
 
-### 2. Deploy Smart Contracts (Local)
+### Deploy Smart Contracts (Local)
 
 ```bash
 # Start local Ethereum node
@@ -134,12 +154,13 @@ cd src/smart-contracts
 forge script script/ProofOfUniqueness.s.sol --rpc-url http://localhost:8545 --broadcast
 ```
 
-### 3. Generate a Credential
+### Demo Flow
 
-1. Fill in the identity form in the web UI
-2. Click "Generate Credential" — this creates a W3C Verifiable Credential signed with EdDSA Poseidon
-3. Click "Generate ZK Proof" — creates a Groth16 proof of the credential
-4. Connect MetaMask and click "Enroll Identity On-Chain"
+1. **Generate Mock Credential** — Fill in the identity form (simulates receiving a VC from a trusted issuer)
+2. **Generate ZK Proof** — Creates a Groth16 proof of the credential
+3. **Enroll On-Chain** — Connect MetaMask and submit the proof to the smart contract
+
+> **Note:** In production, step 1 is replaced by the user presenting an existing VC issued by a trusted authority.
 
 ## Components
 
@@ -152,14 +173,15 @@ The Enrollment circuit verifies:
 3. **Privacy** — Only reveals: HashID, issuer, expiration, sketch hash, verification key, signer public key
 
 **Public Outputs:**
-| Signal | Description |
-|--------|-------------|
-| `hashID` | Poseidon hash of identity fields (privacy-preserving unique ID) |
-| `outIssuer` | Issuer identifier |
-| `outValidUntil` | Credential expiration timestamp |
-| `outSketchHash` | Hash of biometric sketch (for matching) |
-| `outVerificationKey[2]` | Biometric verification key (x, y) |
-| `outSignerPubKey[2]` | Issuer's public key (for trust verification) |
+
+| Signal                  | Description                                                     |
+| ----------------------- | --------------------------------------------------------------- |
+| `hashID`                | Poseidon hash of identity fields (privacy-preserving unique ID) |
+| `outIssuer`             | Issuer identifier                                               |
+| `outValidUntil`         | Credential expiration timestamp                                 |
+| `outSketchHash`         | Hash of biometric sketch (for matching)                         |
+| `outVerificationKey[2]` | Biometric verification key (x, y)                               |
+| `outSignerPubKey[2]`    | Issuer's public key (for trust verification)                    |
 
 ### Smart Contract (`src/smart-contracts/`)
 
@@ -172,7 +194,7 @@ The `ProofOfUniqueness` contract:
 
 ### Fuzzy Signature Library (`src/ecdsa-fuzzy-signature/`)
 
-Enables biometric-based signatures:
+Enables biometric-based key derivation and signatures:
 
 ```typescript
 import { enroll, sign, verify } from "ecdsa-fuzzy-signature";
@@ -187,14 +209,47 @@ const signature = sign(biometric, sketch, message);
 const isValid = verify(vk, message, signature);
 ```
 
-### Client Application (`src/client/`)
+This library is used by **trusted issuers** when creating Verifiable Credentials with biometric binding.
 
-React + TypeScript web app featuring:
+### Demo Client (`src/client/`)
 
-- **DID Generation** — BabyJubJub EdDSA keypairs with `did:babyjubjub:` method
-- **VC Creation** — W3C Verifiable Credentials 2.0 with biometric templates
+React + TypeScript demo application for testing the system:
+
+- **Mock Credential Generation** — Simulates issuer functionality for testing
 - **ZK Proof Generation** — In-browser Groth16 proof generation via snarkjs
 - **Web3 Integration** — MetaMask connection via Wagmi for on-chain enrollment
+
+> **Production Note:** A production client would only need proof generation and Web3 integration, receiving VCs from external trusted issuers.
+
+## Credential Format
+
+Verifiable Credentials must follow this structure for circuit compatibility:
+
+```json
+{
+  "@context": ["https://www.w3.org/ns/credentials/v2"],
+  "type": ["VerifiableCredential", "BiometricIdentityCredential"],
+  "issuer": { "id": "did:babyjubjub:..." },
+  "validFrom": "2025-01-02T...",
+  "validUntil": "2030-01-02T...",
+  "credentialSubject": {
+    "id": "urn:person:...",
+    "name": "...",
+    "dateOfBirth": "...",
+    "nationality": "...",
+    "sex": "...",
+    "biometricTemplate": { "type": "FuzzySignatureTemplate", "template": "..." },
+    "biometricVerificationKey": { "type": "FuzzyVerificationKey", "value": "..." }
+  },
+  "proof": {
+    "type": "EdDSAPoseidonSignature2024",
+    "signatureR8": ["...", "..."],
+    "signatureS": "...",
+    "signerPublicKey": ["...", "..."]
+  },
+  "circuitInputs": { ... }
+}
+```
 
 ## License
 
