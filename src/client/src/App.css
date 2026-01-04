@@ -634,6 +634,42 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* Circuit Inputs Section */
+.circuit-inputs-section {
+  border-top: 1px solid var(--border-medium);
+}
+
+.circuit-badge {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+  color: white;
+  border-radius: 4px;
+}
+
+.toggle-button {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  transition: color 0.2s ease;
+}
+
+.toggle-button:hover {
+  color: var(--text-primary);
+}
+
+.circuit-inputs-json {
+  background: rgba(139, 92, 246, 0.05);
+  border-top: 1px dashed rgba(139, 92, 246, 0.2);
+}
+
 /* Loading State */
 .loading-container {
   display: flex;
