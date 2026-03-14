@@ -1,5 +1,15 @@
 import * as snarkjs from "snarkjs";
 import type { VerifiableCredential } from "./vc";
+import {
+  stringToField,
+  dateToField,
+  sexToField,
+  hashBytes,
+  vkToFieldElements,
+  fromHex,
+  decodeProofValue,
+  extractPublicKeyFromVerificationMethod,
+} from "./did";
 
 export interface CircuitInputs {
   vcId: string;
@@ -32,47 +42,61 @@ export interface ProofOutputs {
   outSignerPubKey: [string, string];
 }
 
-/**
- * Extract circuit inputs from a Verifiable Credential
- */
+/** Recompute all circuit inputs from standard VC fields */
 export function extractCircuitInputs(vc: VerifiableCredential): CircuitInputs {
-  const ci = vc.circuitInputs;
+  const subject = vc.credentialSubject;
   const proof = vc.proof;
 
+  const vcId = stringToField(vc.id).toString();
+  const credentialSubjectId = stringToField(subject.id).toString();
+  const credentialSubjectName = stringToField(subject.name).toString();
+  const credentialSubjectDob = dateToField(subject.dateOfBirth).toString();
+  const credentialSubjectSex = sexToField(subject.sex).toString();
+  const credentialSubjectNationality = stringToField(subject.nationality).toString();
+  const validFrom = dateToField(vc.validFrom).toString();
+  const validUntil = dateToField(vc.validUntil).toString();
+  const issuer = stringToField(vc.issuer.id).toString();
+
+  const sketchBytes = fromHex(subject.biometricTemplate.template);
+  const sketchHash = hashBytes(sketchBytes).toString();
+
+  const vkBytes = fromHex(subject.biometricVerificationKey.value);
+  const vkFields = vkToFieldElements(vkBytes);
+  const biometricVk: [string, string] = [vkFields[0].toString(), vkFields[1].toString()];
+
+  const { signatureR8, signatureS } = decodeProofValue(proof.proofValue);
+  const pubKey = extractPublicKeyFromVerificationMethod(proof.verificationMethod);
+  const signerPubKey: [string, string] = [pubKey.x, pubKey.y];
+
   return {
-    vcId: ci.vcId,
-    credentialSubjectId: ci.credentialSubjectId,
-    credentialSubjectName: ci.credentialSubjectName,
-    credentialSubjectDob: ci.credentialSubjectDob,
-    credentialSubjectSex: ci.credentialSubjectSex,
-    credentialSubjectNationality: ci.credentialSubjectNationality,
-    validFrom: ci.validFrom,
-    validUntil: ci.validUntil,
-    issuer: ci.issuer,
-    sketchHash: ci.sketchHash,
-    biometricVk: ci.biometricVk,
-    signerPubKey: proof.signerPublicKey,
-    signatureR8: proof.signatureR8,
-    signatureS: proof.signatureS,
+    vcId,
+    credentialSubjectId,
+    credentialSubjectName,
+    credentialSubjectDob,
+    credentialSubjectSex,
+    credentialSubjectNationality,
+    validFrom,
+    validUntil,
+    issuer,
+    sketchHash,
+    biometricVk,
+    signerPubKey,
+    signatureR8,
+    signatureS,
   };
 }
 
-/**
- * Generate a ZK proof for an enrollment credential
- */
 export async function generateProof(
   vc: VerifiableCredential
 ): Promise<ZKProof> {
   const inputs = extractCircuitInputs(vc);
 
-  // Fetch the WASM and zkey files
   const wasmResponse = await fetch("/circuits/Enrollment.wasm");
   const wasmBuffer = await wasmResponse.arrayBuffer();
 
   const zkeyResponse = await fetch("/circuits/Enrollment_0001.zkey");
   const zkeyBuffer = await zkeyResponse.arrayBuffer();
 
-  // Generate the proof
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(
     inputs as unknown as Record<string, unknown>,
     new Uint8Array(wasmBuffer),
@@ -82,12 +106,7 @@ export async function generateProof(
   return { proof, publicSignals };
 }
 
-/**
- * Parse public signals into named outputs
- */
 export function parsePublicSignals(publicSignals: string[]): ProofOutputs {
-  // Output order from circuit:
-  // hashID, outIssuer, outValidUntil, outSketchHash, outVerificationKey[0], outVerificationKey[1], outSignerPubKey[0], outSignerPubKey[1]
   return {
     hashID: publicSignals[0],
     outIssuer: publicSignals[1],
@@ -98,9 +117,6 @@ export function parsePublicSignals(publicSignals: string[]): ProofOutputs {
   };
 }
 
-/**
- * Verify a ZK proof
- */
 export async function verifyProof(zkProof: ZKProof): Promise<boolean> {
   const vkeyResponse = await fetch("/circuits/verification_key.json");
   const vkey = await vkeyResponse.json();
@@ -108,13 +124,9 @@ export async function verifyProof(zkProof: ZKProof): Promise<boolean> {
   return snarkjs.groth16.verify(vkey, zkProof.publicSignals, zkProof.proof);
 }
 
-/**
- * Export proof for Solidity verification
- */
 export async function exportForSolidity(zkProof: ZKProof): Promise<string> {
   return snarkjs.groth16.exportSolidityCallData(
     zkProof.proof,
     zkProof.publicSignals
   );
 }
-

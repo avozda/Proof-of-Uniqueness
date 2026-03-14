@@ -78,28 +78,19 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
   const handleSubmitToContract = async () => {
     if (!zkProof || !proofVerified) return;
 
-    // Update the contract address
     setContractAddress(contractAddress);
 
-    // Parse proof for smart contract
-    // snarkjs proof format: { pi_a, pi_b, pi_c }
     const proof = zkProof.proof;
     const publicSignals = zkProof.publicSignals;
 
-    // Format proof for Solidity verifier
-    // pi_a is [x, y, z] but we only need [x, y]
+    // Format proof for Solidity verifier (swap pi_b coordinate order)
     const pA: [bigint, bigint] = [BigInt(proof.pi_a[0]), BigInt(proof.pi_a[1])];
-
-    // pi_b is [[x1, x2], [y1, y2], [z1, z2]] - Solidity expects [[x2, x1], [y2, y1]]
     const pB: [[bigint, bigint], [bigint, bigint]] = [
       [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
       [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])],
     ];
-
-    // pi_c is [x, y, z] but we only need [x, y]
     const pC: [bigint, bigint] = [BigInt(proof.pi_c[0]), BigInt(proof.pi_c[1])];
 
-    // Public signals array (8 elements)
     const pubSignals: readonly [
       bigint,
       bigint,
@@ -219,7 +210,6 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
             </div>
           </div>
 
-          {/* Smart Contract Submission Section */}
           <div className="contract-section">
             <h4>
               <span className="contract-icon">📜</span>
