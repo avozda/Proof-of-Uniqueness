@@ -202,6 +202,137 @@ export function poseidonHash(inputs: bigint[]): bigint {
   return poseidonInstance.F.toObject(hash);
 }
 
+// Domain separator for VC signatures (prevents cross-protocol attacks)
+export const SIGNATURE_DOMAIN = "eddsa-babyjubjub-poseidon-2024:v1";
+
+// Field labels for Merkle tree (alphabetically sorted for determinism)
+export const VC_FIELD_LABELS = [
+  "biometricVk.0",
+  "biometricVk.1",
+  "credentialSubjectId",
+  "dob",
+  "issuer",
+  "name",
+  "nationality",
+  "sex",
+  "sketchHash",
+  "validFrom",
+  "validUntil",
+  "vcId",
+] as const;
+
+export type VCFieldLabel = typeof VC_FIELD_LABELS[number];
+
+export interface MerkleTree {
+  root: bigint;
+  leaves: bigint[];
+  layers: bigint[][];
+}
+
+export interface MerklePath {
+  siblings: bigint[];
+  pathIndices: number[];
+}
+
+/** Compute a labeled leaf: Poseidon(label, value) */
+export function computeFieldLeaf(label: string, value: bigint): bigint {
+  const labelField = stringToFieldSimple(label);
+  return poseidonHash([labelField, value]);
+}
+
+/** Simple string to field (no recursive hashing, for short labels only) */
+function stringToFieldSimple(str: string): bigint {
+  const bytes = new TextEncoder().encode(str);
+  if (bytes.length > 31) {
+    throw new Error(`Label too long for single field element: ${str}`);
+  }
+  let value = BigInt(0);
+  for (let j = 0; j < bytes.length; j++) {
+    value = (value << BigInt(8)) | BigInt(bytes[j]);
+  }
+  return value;
+}
+
+/** Build a binary Poseidon Merkle tree from leaves, padding to power of 2 */
+export function buildMerkleTree(leaves: bigint[]): MerkleTree {
+  if (leaves.length === 0) {
+    throw new Error("Cannot build Merkle tree from empty leaves");
+  }
+
+  // Pad to next power of 2
+  const targetSize = Math.pow(2, Math.ceil(Math.log2(leaves.length)));
+  const paddedLeaves = [...leaves];
+  while (paddedLeaves.length < targetSize) {
+    paddedLeaves.push(BigInt(0));
+  }
+
+  const layers: bigint[][] = [paddedLeaves];
+  let currentLayer = paddedLeaves;
+
+  while (currentLayer.length > 1) {
+    const nextLayer: bigint[] = [];
+    for (let i = 0; i < currentLayer.length; i += 2) {
+      const left = currentLayer[i];
+      const right = currentLayer[i + 1];
+      nextLayer.push(poseidonHash([left, right]));
+    }
+    layers.push(nextLayer);
+    currentLayer = nextLayer;
+  }
+
+  return {
+    root: currentLayer[0],
+    leaves: paddedLeaves,
+    layers,
+  };
+}
+
+/** Get Merkle proof path for a leaf at given index */
+export function getMerklePath(tree: MerkleTree, leafIndex: number): MerklePath {
+  if (leafIndex < 0 || leafIndex >= tree.leaves.length) {
+    throw new Error(`Invalid leaf index: ${leafIndex}`);
+  }
+
+  const siblings: bigint[] = [];
+  const pathIndices: number[] = [];
+  let currentIndex = leafIndex;
+
+  for (let i = 0; i < tree.layers.length - 1; i++) {
+    const layer = tree.layers[i];
+    const isRight = currentIndex % 2 === 1;
+    const siblingIndex = isRight ? currentIndex - 1 : currentIndex + 1;
+
+    siblings.push(layer[siblingIndex]);
+    pathIndices.push(isRight ? 1 : 0);
+    currentIndex = Math.floor(currentIndex / 2);
+  }
+
+  return { siblings, pathIndices };
+}
+
+/** Verify a Merkle proof */
+export function verifyMerklePath(
+  leaf: bigint,
+  path: MerklePath,
+  root: bigint
+): boolean {
+  let current = leaf;
+  for (let i = 0; i < path.siblings.length; i++) {
+    const sibling = path.siblings[i];
+    if (path.pathIndices[i] === 0) {
+      current = poseidonHash([current, sibling]);
+    } else {
+      current = poseidonHash([sibling, current]);
+    }
+  }
+  return current === root;
+}
+
+/** Compute domain separator field element */
+export function getDomainSeparator(): bigint {
+  return stringToFieldSimple(SIGNATURE_DOMAIN);
+}
+
 /** Convert string to field element (31-byte chunks, Poseidon-hashed if multiple) */
 export function stringToField(str: string): bigint {
   const poseidonInstance = getPoseidon();
@@ -242,42 +373,74 @@ export interface VCSignatureData {
   message: bigint;
   signature: EdDSASignature;
   publicKey: EdDSAPublicKey;
+  merkleTree: MerkleTree;
+  fieldValues: Map<VCFieldLabel, bigint>;
 }
 
-/** Sign all VC fields with EdDSA Poseidon (message = Poseidon hash of fields) */
+export interface VCFields {
+  vcId: bigint;
+  credentialSubjectId: bigint;
+  name: bigint;
+  dob: bigint;
+  sex: bigint;
+  nationality: bigint;
+  validFrom: bigint;
+  issuer: bigint;
+  validUntil: bigint;
+  sketchHash: bigint;
+  verificationKey: [bigint, bigint];
+}
+
+/** Build labeled field map from VC fields (sorted alphabetically by label) */
+export function buildFieldMap(vcFields: VCFields): Map<VCFieldLabel, bigint> {
+  const fieldMap = new Map<VCFieldLabel, bigint>();
+  fieldMap.set("biometricVk.0", vcFields.verificationKey[0]);
+  fieldMap.set("biometricVk.1", vcFields.verificationKey[1]);
+  fieldMap.set("credentialSubjectId", vcFields.credentialSubjectId);
+  fieldMap.set("dob", vcFields.dob);
+  fieldMap.set("issuer", vcFields.issuer);
+  fieldMap.set("name", vcFields.name);
+  fieldMap.set("nationality", vcFields.nationality);
+  fieldMap.set("sex", vcFields.sex);
+  fieldMap.set("sketchHash", vcFields.sketchHash);
+  fieldMap.set("validFrom", vcFields.validFrom);
+  fieldMap.set("validUntil", vcFields.validUntil);
+  fieldMap.set("vcId", vcFields.vcId);
+  return fieldMap;
+}
+
+/** Compute Merkle tree leaves from labeled fields (in label order) */
+export function computeMerkleLeaves(fieldMap: Map<VCFieldLabel, bigint>): bigint[] {
+  return VC_FIELD_LABELS.map(label => {
+    const value = fieldMap.get(label);
+    if (value === undefined) {
+      throw new Error(`Missing field value for label: ${label}`);
+    }
+    return computeFieldLeaf(label, value);
+  });
+}
+
+/** Sign VC fields with Merkle tree + domain separator */
 export function createVCSignature(
   privateKey: Uint8Array,
   publicKey: EdDSAPublicKey,
-  vcFields: {
-    vcId: bigint;
-    credentialSubjectId: bigint;
-    name: bigint;
-    dob: bigint;
-    sex: bigint;
-    nationality: bigint;
-    validFrom: bigint;
-    issuer: bigint;
-    validUntil: bigint;
-    sketchHash: bigint;
-    verificationKey: [bigint, bigint];
-  }
+  vcFields: VCFields
 ): VCSignatureData {
-  const message = poseidonHash([
-    vcFields.vcId,
-    vcFields.credentialSubjectId,
-    vcFields.name,
-    vcFields.dob,
-    vcFields.sex,
-    vcFields.nationality,
-    vcFields.validFrom,
-    vcFields.issuer,
-    vcFields.validUntil,
-    vcFields.sketchHash,
-    vcFields.verificationKey[0],
-    vcFields.verificationKey[1],
-  ]);
+  const fieldValues = buildFieldMap(vcFields);
+  const leaves = computeMerkleLeaves(fieldValues);
+  const merkleTree = buildMerkleTree(leaves);
 
-  return { message, signature: signMessage(privateKey, message), publicKey };
+  // Message = Poseidon(domainSeparator, merkleRoot)
+  const domainSeparator = getDomainSeparator();
+  const message = poseidonHash([domainSeparator, merkleTree.root]);
+
+  return {
+    message,
+    signature: signMessage(privateKey, message),
+    publicKey,
+    merkleTree,
+    fieldValues,
+  };
 }
 
 export function toHex(bytes: Uint8Array): string {

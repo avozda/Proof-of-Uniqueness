@@ -9,20 +9,21 @@ import {
   fromHex,
   decodeProofValue,
   extractPublicKeyFromVerificationMethod,
+  computeFieldLeaf,
+  buildMerkleTree,
+  getDomainSeparator,
+  VC_FIELD_LABELS,
+  type VCFields,
 } from "./did";
 
 export interface CircuitInputs {
-  vcId: string;
-  credentialSubjectId: string;
-  credentialSubjectName: string;
-  credentialSubjectDob: string;
-  credentialSubjectSex: string;
-  credentialSubjectNationality: string;
-  validFrom: string;
-  validUntil: string;
-  issuer: string;
-  sketchHash: string;
-  biometricVk: [string, string];
+  // Domain separator
+  domainSeparator: string;
+  // Merkle tree structure (4 levels for 12 fields padded to 16)
+  merkleLeaves: string[];
+  // Field values (needed to verify leaf computation in circuit)
+  fieldValues: string[];
+  // EdDSA signature
   signerPubKey: [string, string];
   signatureR8: [string, string];
   signatureS: string;
@@ -42,44 +43,68 @@ export interface ProofOutputs {
   outSignerPubKey: [string, string];
 }
 
-/** Recompute all circuit inputs from standard VC fields */
-export function extractCircuitInputs(vc: VerifiableCredential): CircuitInputs {
+/** Extract field values from VC in the canonical label order */
+function extractFieldValues(vc: VerifiableCredential): VCFields {
   const subject = vc.credentialSubject;
-  const proof = vc.proof;
-
-  const vcId = stringToField(vc.id).toString();
-  const credentialSubjectId = stringToField(subject.id).toString();
-  const credentialSubjectName = stringToField(subject.name).toString();
-  const credentialSubjectDob = dateToField(subject.dateOfBirth).toString();
-  const credentialSubjectSex = sexToField(subject.sex).toString();
-  const credentialSubjectNationality = stringToField(subject.nationality).toString();
-  const validFrom = dateToField(vc.validFrom).toString();
-  const validUntil = dateToField(vc.validUntil).toString();
-  const issuer = stringToField(vc.issuer.id).toString();
-
+  
   const sketchBytes = fromHex(subject.biometricTemplate.template);
-  const sketchHash = hashBytes(sketchBytes).toString();
-
   const vkBytes = fromHex(subject.biometricVerificationKey.value);
   const vkFields = vkToFieldElements(vkBytes);
-  const biometricVk: [string, string] = [vkFields[0].toString(), vkFields[1].toString()];
+
+  return {
+    vcId: stringToField(vc.id),
+    credentialSubjectId: stringToField(subject.id),
+    name: stringToField(subject.name),
+    dob: dateToField(subject.dateOfBirth),
+    sex: sexToField(subject.sex),
+    nationality: stringToField(subject.nationality),
+    validFrom: dateToField(vc.validFrom),
+    validUntil: dateToField(vc.validUntil),
+    issuer: stringToField(vc.issuer.id),
+    sketchHash: hashBytes(sketchBytes),
+    verificationKey: vkFields,
+  };
+}
+
+/** Recompute all circuit inputs from VC (Merkle tree approach) */
+export function extractCircuitInputs(vc: VerifiableCredential): CircuitInputs {
+  const proof = vc.proof;
+  
+  // Extract field values in canonical order
+  const fields = extractFieldValues(vc);
+  
+  // Build field values array matching VC_FIELD_LABELS order
+  const fieldValuesOrdered: bigint[] = [
+    fields.verificationKey[0],  // biometricVk.0
+    fields.verificationKey[1],  // biometricVk.1
+    fields.credentialSubjectId, // credentialSubjectId
+    fields.dob,                 // dob
+    fields.issuer,              // issuer
+    fields.name,                // name
+    fields.nationality,         // nationality
+    fields.sex,                 // sex
+    fields.sketchHash,          // sketchHash
+    fields.validFrom,           // validFrom
+    fields.validUntil,          // validUntil
+    fields.vcId,                // vcId
+  ];
+  
+  // Compute Merkle leaves
+  const leaves = VC_FIELD_LABELS.map((label, i) => 
+    computeFieldLeaf(label, fieldValuesOrdered[i])
+  );
+  
+  // Build tree and get padded leaves
+  const tree = buildMerkleTree(leaves);
 
   const { signatureR8, signatureS } = decodeProofValue(proof.proofValue);
   const pubKey = extractPublicKeyFromVerificationMethod(proof.verificationMethod);
   const signerPubKey: [string, string] = [pubKey.x, pubKey.y];
 
   return {
-    vcId,
-    credentialSubjectId,
-    credentialSubjectName,
-    credentialSubjectDob,
-    credentialSubjectSex,
-    credentialSubjectNationality,
-    validFrom,
-    validUntil,
-    issuer,
-    sketchHash,
-    biometricVk,
+    domainSeparator: getDomainSeparator().toString(),
+    merkleLeaves: tree.leaves.map(l => l.toString()),
+    fieldValues: fieldValuesOrdered.map(v => v.toString()),
     signerPubKey,
     signatureR8,
     signatureS,

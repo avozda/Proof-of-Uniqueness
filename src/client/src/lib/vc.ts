@@ -8,6 +8,8 @@ import {
   encodeProofValue,
   hashBytes,
   vkToFieldElements,
+  SIGNATURE_DOMAIN,
+  VC_FIELD_LABELS,
 } from "./did";
 import type { DIDKeyPair } from "./did";
 
@@ -34,6 +36,13 @@ export interface DataIntegrityProof {
   verificationMethod: string;
   proofPurpose: string;
   proofValue: string;
+  /** Merkle tree metadata for ZK proof generation */
+  merkleTreeData?: {
+    domain: string;
+    fieldLabels: readonly string[];
+    leaves: string[];
+    root: string;
+  };
 }
 
 export interface VerifiableCredential {
@@ -148,6 +157,12 @@ export function createVerifiableCredential(
       verificationMethod: issuer.verificationMethod,
       proofPurpose: "assertionMethod",
       proofValue: proofValue,
+      merkleTreeData: {
+        domain: SIGNATURE_DOMAIN,
+        fieldLabels: VC_FIELD_LABELS,
+        leaves: signatureData.merkleTree.leaves.map(l => l.toString()),
+        root: signatureData.merkleTree.root.toString(),
+      },
     },
   };
 }
