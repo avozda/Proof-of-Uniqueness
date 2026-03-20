@@ -180,7 +180,10 @@ function App() {
 
             <BiometricInfo biometricData={biometricData} />
             <CredentialDisplay credential={credential} />
-            <ZKProofSection credential={credential} />
+            <ZKProofSection
+              credential={credential}
+              issuerPublicKey={issuerDID.publicKey}
+            />
           </section>
         )}
       </main>

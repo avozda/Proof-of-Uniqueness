@@ -58,7 +58,9 @@ export function DIDSection({ issuerDID, onRegenerate }: DIDSectionProps) {
 
         <div className="uint256-section">
           <div className="uint256-header">
-            <span className="uint256-label">📋 Public Key (uint256 for Smart Contract)</span>
+            <span className="uint256-label">
+              📋 Public Key (uint256 for Smart Contract)
+            </span>
           </div>
           <div className="uint256-grid">
             <div className="uint256-item">
@@ -93,4 +95,3 @@ export function DIDSection({ issuerDID, onRegenerate }: DIDSectionProps) {
     </section>
   );
 }
-

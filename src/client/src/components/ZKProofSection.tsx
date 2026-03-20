@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useAccount,
   useConnect,
   useDisconnect,
+  useReadContract,
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi";
@@ -11,20 +12,25 @@ import { generateProof, verifyProof, parsePublicSignals } from "../lib/proof";
 import type { ZKProof, ProofOutputs } from "../lib/proof";
 import type { VerifiableCredential } from "../lib/vc";
 import { proofOfUniquenessAbi } from "../lib/contractAbi";
+import { formatProofOfUniquenessTxError } from "../lib/contractErrors";
 import { CONTRACT_ADDRESSES, setContractAddress } from "../lib/wagmi";
 
 interface ZKProofSectionProps {
   credential: VerifiableCredential;
+  issuerPublicKey: { x: bigint; y: bigint };
 }
 
-export function ZKProofSection({ credential }: ZKProofSectionProps) {
+export function ZKProofSection({
+  credential,
+  issuerPublicKey,
+}: ZKProofSectionProps) {
   const [zkProof, setZkProof] = useState<ZKProof | null>(null);
   const [proofOutputs, setProofOutputs] = useState<ProofOutputs | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [proofVerified, setProofVerified] = useState<boolean | null>(null);
   const [proofError, setProofError] = useState<string | null>(null);
   const [contractAddress, setContractAddressInput] = useState(
-    CONTRACT_ADDRESSES.proofOfUniqueness
+    CONTRACT_ADDRESSES.proofOfUniqueness,
   );
 
   // Wagmi hooks
@@ -37,12 +43,118 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
     isPending: isSubmitting,
     error: submitError,
     reset: resetSubmit,
-  } = useWriteContract();
+  } = useWriteContract({
+    mutation: { retry: false },
+  });
 
-  const { isLoading: isConfirming, isSuccess: isConfirmed } =
-    useWaitForTransactionReceipt({
-      hash: txHash,
-    });
+  const {
+    writeContract: writeIssuerTx,
+    data: issuerTxHash,
+    isPending: isIssuerSubmitting,
+    error: issuerSubmitError,
+    reset: resetIssuerSubmit,
+  } = useWriteContract({
+    mutation: { retry: false },
+  });
+
+  const {
+    data: receipt,
+    isLoading: isConfirming,
+    isSuccess: receiptReady,
+    isError: receiptWaitFailed,
+    error: receiptWaitError,
+  } = useWaitForTransactionReceipt({
+    hash: txHash,
+    query: { retry: false },
+  });
+
+  const {
+    data: issuerReceipt,
+    isLoading: isIssuerConfirming,
+    isSuccess: issuerReceiptReady,
+    isError: issuerReceiptWaitFailed,
+    error: issuerReceiptWaitError,
+  } = useWaitForTransactionReceipt({
+    hash: issuerTxHash,
+    query: { retry: false },
+  });
+
+  const contractAddressValid =
+    /^0x[a-fA-F0-9]{40}$/.test(contractAddress) &&
+    contractAddress !== "0x0000000000000000000000000000000000000000";
+
+  const {
+    data: issuerTrusted,
+    isFetching: issuerTrustLoading,
+    refetch: refetchIssuerTrust,
+  } = useReadContract({
+    address: contractAddressValid ? contractAddress : undefined,
+    abi: proofOfUniquenessAbi,
+    functionName: "isIssuerTrusted",
+    args: [issuerPublicKey.x, issuerPublicKey.y],
+    query: {
+      enabled: Boolean(isConnected && contractAddressValid),
+      retry: false,
+    },
+  });
+
+  // viem only maps status for exact "0x0"/"0x1"; some RPCs return variants so status can be
+  // undefined even when the tx reverted — treat any non-success receipt as failure.
+  const txFailedOnChain =
+    Boolean(txHash) &&
+    receiptReady &&
+    receipt != null &&
+    receipt.status !== "success";
+
+  const isEnrolledOnChain =
+    receiptReady && receipt != null && receipt.status === "success";
+
+  const txOutcomeSettled =
+    Boolean(txHash) && !isSubmitting && !isConfirming;
+
+  const displayTxError =
+    submitError != null
+      ? formatProofOfUniquenessTxError(submitError)
+      : txOutcomeSettled && receiptWaitFailed
+        ? receiptWaitError instanceof Error
+          ? formatProofOfUniquenessTxError(receiptWaitError)
+          : String(receiptWaitError)
+        : txOutcomeSettled && txFailedOnChain
+          ? receipt?.status === "reverted"
+            ? "Transaction reverted on-chain."
+            : "Transaction was mined but did not succeed (reverted, or receipt status missing / not recognized by the client)."
+          : null;
+
+  const issuerTxFailedOnChain =
+    Boolean(issuerTxHash) &&
+    issuerReceiptReady &&
+    issuerReceipt != null &&
+    issuerReceipt.status !== "success";
+
+  const issuerRegisteredOnChain =
+    issuerReceiptReady &&
+    issuerReceipt != null &&
+    issuerReceipt.status === "success";
+
+  const issuerTxOutcomeSettled =
+    Boolean(issuerTxHash) && !isIssuerSubmitting && !isIssuerConfirming;
+
+  const displayIssuerTxError =
+    issuerSubmitError != null
+      ? formatProofOfUniquenessTxError(issuerSubmitError)
+      : issuerTxOutcomeSettled && issuerReceiptWaitFailed
+        ? issuerReceiptWaitError instanceof Error
+          ? formatProofOfUniquenessTxError(issuerReceiptWaitError)
+          : String(issuerReceiptWaitError)
+        : issuerTxOutcomeSettled && issuerTxFailedOnChain
+          ? issuerReceipt?.status === "reverted"
+            ? "Transaction reverted on-chain."
+            : "Transaction was mined but did not succeed (reverted, or receipt status missing / not recognized by the client)."
+          : null;
+
+  useEffect(() => {
+    if (issuerRegisteredOnChain) void refetchIssuerTrust();
+  }, [issuerRegisteredOnChain, refetchIssuerTrust]);
 
   const handleGenerateProof = async () => {
     setIsGenerating(true);
@@ -51,6 +163,7 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
     setProofOutputs(null);
     setProofVerified(null);
     resetSubmit();
+    resetIssuerSubmit();
 
     try {
       const proof = await generateProof(credential);
@@ -64,7 +177,7 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
     } catch (err) {
       console.error("Error generating proof:", err);
       setProofError(
-        err instanceof Error ? err.message : "Unknown error generating proof"
+        err instanceof Error ? err.message : "Unknown error generating proof",
       );
     } finally {
       setIsGenerating(false);
@@ -75,31 +188,34 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
     connect({ connector: injected() });
   };
 
+  const handleRegisterIssuerOnChain = () => {
+    if (!contractAddressValid) return;
+    setContractAddress(contractAddress);
+    resetIssuerSubmit();
+    writeIssuerTx({
+      address: contractAddress,
+      abi: proofOfUniquenessAbi,
+      functionName: "addTrustedIssuer",
+      args: [issuerPublicKey.x, issuerPublicKey.y],
+    });
+  };
+
   const handleSubmitToContract = async () => {
     if (!zkProof || !proofVerified) return;
 
-    // Update the contract address
     setContractAddress(contractAddress);
 
-    // Parse proof for smart contract
-    // snarkjs proof format: { pi_a, pi_b, pi_c }
     const proof = zkProof.proof;
     const publicSignals = zkProof.publicSignals;
 
-    // Format proof for Solidity verifier
-    // pi_a is [x, y, z] but we only need [x, y]
+    // Format proof for Solidity verifier (swap pi_b coordinate order)
     const pA: [bigint, bigint] = [BigInt(proof.pi_a[0]), BigInt(proof.pi_a[1])];
-
-    // pi_b is [[x1, x2], [y1, y2], [z1, z2]] - Solidity expects [[x2, x1], [y2, y1]]
     const pB: [[bigint, bigint], [bigint, bigint]] = [
       [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
       [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])],
     ];
-
-    // pi_c is [x, y, z] but we only need [x, y]
     const pC: [bigint, bigint] = [BigInt(proof.pi_c[0]), BigInt(proof.pi_c[1])];
 
-    // Public signals array (8 elements)
     const pubSignals: readonly [
       bigint,
       bigint,
@@ -108,7 +224,7 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
       bigint,
       bigint,
       bigint,
-      bigint
+      bigint,
     ] = [
       BigInt(publicSignals[0]),
       BigInt(publicSignals[1]),
@@ -120,16 +236,13 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
       BigInt(publicSignals[7]),
     ];
 
-    try {
-      writeContract({
-        address: contractAddress,
-        abi: proofOfUniquenessAbi,
-        functionName: "enroll",
-        args: [pA, pB, pC, pubSignals],
-      });
-    } catch (err) {
-      console.error("Error submitting to contract:", err);
-    }
+    resetSubmit();
+    writeContract({
+      address: contractAddress,
+      abi: proofOfUniquenessAbi,
+      functionName: "enroll",
+      args: [pA, pB, pC, pubSignals],
+    });
   };
 
   const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -219,7 +332,6 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
             </div>
           </div>
 
-          {/* Smart Contract Submission Section */}
           <div className="contract-section">
             <h4>
               <span className="contract-icon">📜</span>
@@ -272,12 +384,94 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
                   </button>
                 </div>
 
+                <div className="issuer-onchain-block">
+                  <p className="issuer-onchain-hint">
+                    The contract only accepts enrollments from trusted issuers.
+                    Register this app&apos;s issuer key (your DID) before
+                    enrolling. You must use the contract owner account (same as
+                    deployer).
+                  </p>
+                  <div className="issuer-trust-row">
+                    {issuerTrustLoading ? (
+                      <span className="issuer-trust-status">
+                        Checking issuer on-chain…
+                      </span>
+                    ) : issuerTrusted ? (
+                      <span className="issuer-trust-badge trusted">
+                        ✓ Issuer trusted for this contract
+                      </span>
+                    ) : contractAddressValid ? (
+                      <span className="issuer-trust-badge untrusted">
+                        Issuer not registered on this contract
+                      </span>
+                    ) : (
+                      <span className="issuer-trust-badge untrusted">
+                        Enter a valid contract address to check issuer status
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    className="issuer-register-button"
+                    onClick={handleRegisterIssuerOnChain}
+                    disabled={
+                      !contractAddressValid ||
+                      isIssuerSubmitting ||
+                      isIssuerConfirming ||
+                      issuerTrusted === true
+                    }
+                  >
+                    {isIssuerSubmitting ? (
+                      <>
+                        <span className="spinner" />
+                        Submitting…
+                      </>
+                    ) : isIssuerConfirming ? (
+                      <>
+                        <span className="spinner" />
+                        Confirming…
+                      </>
+                    ) : issuerTrusted ? (
+                      <>
+                        <span className="btn-icon">✓</span>
+                        Issuer already on-chain
+                      </>
+                    ) : (
+                      <>
+                        <span className="btn-icon">📌</span>
+                        Register current issuer on-chain
+                      </>
+                    )}
+                  </button>
+                  {displayIssuerTxError != null && (
+                    <div className="tx-error issuer-tx-error" role="alert">
+                      <span className="tx-error-icon">❌</span>
+                      <span className="tx-error-text">
+                        {displayIssuerTxError}
+                      </span>
+                    </div>
+                  )}
+                  {issuerTxHash && (
+                    <div className="tx-info issuer-tx-info">
+                      <span className="tx-label">Issuer registration tx:</span>
+                      <code className="tx-hash">{issuerTxHash}</code>
+                    </div>
+                  )}
+                  {issuerRegisteredOnChain && (
+                    <div className="tx-success issuer-tx-success">
+                      <span>✅</span> Issuer registered successfully.
+                    </div>
+                  )}
+                </div>
+
                 <button
                   className="submit-button"
                   onClick={handleSubmitToContract}
                   disabled={
                     isSubmitting ||
                     isConfirming ||
+                    isIssuerSubmitting ||
+                    isIssuerConfirming ||
                     !proofVerified ||
                     contractAddress ===
                       "0x0000000000000000000000000000000000000000"
@@ -302,14 +496,10 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
                   )}
                 </button>
 
-                {submitError && (
-                  <div className="tx-error">
-                    <span>❌</span>{" "}
-                    {submitError.message.includes("IssuerNotTrusted")
-                      ? "Issuer not trusted. Add the issuer public key to the contract first."
-                      : submitError.message.includes("IdentityAlreadyExists")
-                        ? "This identity has already been enrolled."
-                        : submitError.message}
+                {displayTxError != null && (
+                  <div className="tx-error" role="alert">
+                    <span className="tx-error-icon">❌</span>
+                    <span className="tx-error-text">{displayTxError}</span>
                   </div>
                 )}
 
@@ -320,7 +510,7 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
                   </div>
                 )}
 
-                {isConfirmed && (
+                {isEnrolledOnChain && (
                   <div className="tx-success">
                     <span>✅</span> Identity successfully enrolled on-chain!
                   </div>
@@ -338,7 +528,7 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
                   publicSignals: zkProof.publicSignals,
                 },
                 null,
-                2
+                2,
               )}
             </pre>
           </div>

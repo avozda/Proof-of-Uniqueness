@@ -3,7 +3,7 @@
    A dark, sophisticated design with amber/gold accents
    ===================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap");
 
 :root {
   /* Dark base palette */
@@ -11,28 +11,28 @@
   --bg-secondary: #12121a;
   --bg-tertiary: #1a1a25;
   --bg-card: #15151f;
-  
+
   /* Amber/Gold accent colors */
   --accent-primary: #f59e0b;
   --accent-secondary: #fbbf24;
   --accent-tertiary: #fcd34d;
   --accent-glow: rgba(245, 158, 11, 0.15);
   --accent-glow-strong: rgba(245, 158, 11, 0.3);
-  
+
   /* Text colors */
   --text-primary: #f5f5f7;
   --text-secondary: #a1a1aa;
   --text-tertiary: #71717a;
-  
+
   /* Border and surface colors */
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-medium: rgba(255, 255, 255, 0.1);
   --border-accent: rgba(245, 158, 11, 0.3);
-  
+
   /* Typography */
-  --font-display: 'Outfit', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
-  
+  --font-display: "Outfit", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", Consolas, monospace;
+
   /* Spacing */
   --section-gap: 2.5rem;
   --card-padding: 1.75rem;
@@ -71,19 +71,27 @@ body {
 .background-pattern {
   position: fixed;
   inset: 0;
-  background: 
+  background:
     radial-gradient(circle at 20% 20%, var(--accent-glow) 0%, transparent 40%),
-    radial-gradient(circle at 80% 80%, rgba(139, 92, 246, 0.08) 0%, transparent 40%),
-    radial-gradient(circle at 50% 50%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
+    radial-gradient(
+      circle at 80% 80%,
+      rgba(139, 92, 246, 0.08) 0%,
+      transparent 40%
+    ),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(6, 182, 212, 0.05) 0%,
+      transparent 50%
+    );
   pointer-events: none;
   z-index: -1;
 }
 
 .background-pattern::before {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
-  background-image: 
+  background-image:
     linear-gradient(var(--border-subtle) 1px, transparent 1px),
     linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
   background-size: 60px 60px;
@@ -120,7 +128,11 @@ body {
   font-size: clamp(2rem, 5vw, 3.5rem);
   font-weight: 700;
   margin: 0 0 0.75rem 0;
-  background: linear-gradient(135deg, var(--text-primary) 0%, var(--accent-secondary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--text-primary) 0%,
+    var(--accent-secondary) 100%
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -150,13 +162,18 @@ body {
 }
 
 .did-card::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, var(--accent-primary), var(--accent-tertiary), var(--accent-primary));
+  background: linear-gradient(
+    90deg,
+    var(--accent-primary),
+    var(--accent-tertiary),
+    var(--accent-primary)
+  );
 }
 
 .did-header {
@@ -426,7 +443,11 @@ body {
   font-size: 1rem;
   font-weight: 600;
   color: var(--bg-primary);
-  background: linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-secondary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--accent-primary) 0%,
+    var(--accent-secondary) 100%
+  );
   border: none;
   border-radius: var(--border-radius-sm);
   cursor: pointer;
@@ -610,7 +631,11 @@ body {
   font-size: 0.75rem;
   font-weight: 600;
   padding: 0.35rem 0.65rem;
-  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  background: linear-gradient(
+    135deg,
+    var(--accent-primary),
+    var(--accent-secondary)
+  );
   color: var(--bg-primary);
   border-radius: 4px;
 }
@@ -752,7 +777,7 @@ body {
 
 .proof-error {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   margin-top: 1rem;
   padding: 0.75rem 1rem;
@@ -761,6 +786,13 @@ body {
   border-radius: var(--border-radius-sm);
   color: #ef4444;
   font-size: 0.9rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-height: 10rem;
+  overflow-y: auto;
 }
 
 .proof-result {
@@ -933,6 +965,98 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-width: 0;
+}
+
+.issuer-onchain-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  min-width: 0;
+}
+
+.issuer-onchain-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.issuer-trust-row {
+  min-height: 1.5rem;
+}
+
+.issuer-trust-status {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.issuer-trust-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.issuer-trust-badge.trusted {
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  color: #22c55e;
+}
+
+.issuer-trust-badge.untrusted {
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  color: #fbbf24;
+}
+
+.issuer-register-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--bg-primary);
+  background: linear-gradient(135deg, #7c3aed 0%, #a78bfa 100%);
+  border: none;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.issuer-register-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(124, 58, 237, 0.35);
+}
+
+.issuer-register-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.issuer-tx-error {
+  margin-top: 0.25rem;
+}
+
+.issuer-tx-info {
+  margin-top: 0;
+}
+
+.issuer-tx-success {
+  margin-top: 0;
 }
 
 .wallet-info {
@@ -1013,6 +1137,24 @@ body {
   border-radius: 6px;
   color: #ef4444;
   font-size: 0.85rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.tx-error-icon {
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.tx-error-text {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.45;
+  max-height: 10rem;
+  overflow-y: auto;
 }
 
 .tx-success {
@@ -1081,23 +1223,23 @@ body {
   .app {
     padding: 1rem;
   }
-  
+
   .header h1 {
     font-size: 2rem;
   }
-  
+
   .did-value {
     font-size: 0.95rem;
   }
-  
+
   .credential-json {
     font-size: 0.7rem;
   }
-  
+
   .bio-config {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .config-value {
     font-size: 1.25rem;
   }
@@ -1107,13 +1249,13 @@ body {
   .credential-form {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .form-group:first-child,
   .form-group:last-of-type,
   .submit-button {
     grid-column: 1 / -1;
   }
-  
+
   .bio-grid {
     grid-template-columns: 1fr;
   }
