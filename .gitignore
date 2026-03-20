@@ -191,13 +191,7 @@ target/
 # ================================
 
 # Zero-knowledge artifacts
-**/*.zkey
-**/*.ptau
-**/*.r1cs
-**/*.sym
-**/*.wasm
-**/verification_key.json
-**/proving_key.json
+src/circuits/build/
 
 # Keep important zk files but ignore intermediate ones
 # Uncomment specific files you want to keep:

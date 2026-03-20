@@ -46,7 +46,7 @@ export interface ProofOutputs {
 /** Extract field values from VC in the canonical label order */
 function extractFieldValues(vc: VerifiableCredential): VCFields {
   const subject = vc.credentialSubject;
-  
+
   const sketchBytes = fromHex(subject.biometricTemplate.template);
   const vkBytes = fromHex(subject.biometricVerificationKey.value);
   const vkFields = vkToFieldElements(vkBytes);
@@ -69,42 +69,44 @@ function extractFieldValues(vc: VerifiableCredential): VCFields {
 /** Recompute all circuit inputs from VC (Merkle tree approach) */
 export function extractCircuitInputs(vc: VerifiableCredential): CircuitInputs {
   const proof = vc.proof;
-  
+
   // Extract field values in canonical order
   const fields = extractFieldValues(vc);
-  
+
   // Build field values array matching VC_FIELD_LABELS order
   const fieldValuesOrdered: bigint[] = [
-    fields.verificationKey[0],  // biometricVk.0
-    fields.verificationKey[1],  // biometricVk.1
+    fields.verificationKey[0], // biometricVk.0
+    fields.verificationKey[1], // biometricVk.1
     fields.credentialSubjectId, // credentialSubjectId
-    fields.dob,                 // dob
-    fields.issuer,              // issuer
-    fields.name,                // name
-    fields.nationality,         // nationality
-    fields.sex,                 // sex
-    fields.sketchHash,          // sketchHash
-    fields.validFrom,           // validFrom
-    fields.validUntil,          // validUntil
-    fields.vcId,                // vcId
+    fields.dob, // dob
+    fields.issuer, // issuer
+    fields.name, // name
+    fields.nationality, // nationality
+    fields.sex, // sex
+    fields.sketchHash, // sketchHash
+    fields.validFrom, // validFrom
+    fields.validUntil, // validUntil
+    fields.vcId, // vcId
   ];
-  
+
   // Compute Merkle leaves
-  const leaves = VC_FIELD_LABELS.map((label, i) => 
-    computeFieldLeaf(label, fieldValuesOrdered[i])
+  const leaves = VC_FIELD_LABELS.map((label, i) =>
+    computeFieldLeaf(label, fieldValuesOrdered[i]),
   );
-  
+
   // Build tree and get padded leaves
   const tree = buildMerkleTree(leaves);
 
   const { signatureR8, signatureS } = decodeProofValue(proof.proofValue);
-  const pubKey = extractPublicKeyFromVerificationMethod(proof.verificationMethod);
+  const pubKey = extractPublicKeyFromVerificationMethod(
+    proof.verificationMethod,
+  );
   const signerPubKey: [string, string] = [pubKey.x, pubKey.y];
 
   return {
     domainSeparator: getDomainSeparator().toString(),
-    merkleLeaves: tree.leaves.map(l => l.toString()),
-    fieldValues: fieldValuesOrdered.map(v => v.toString()),
+    merkleLeaves: tree.leaves.map((l) => l.toString()),
+    fieldValues: fieldValuesOrdered.map((v) => v.toString()),
     signerPubKey,
     signatureR8,
     signatureS,
@@ -112,7 +114,7 @@ export function extractCircuitInputs(vc: VerifiableCredential): CircuitInputs {
 }
 
 export async function generateProof(
-  vc: VerifiableCredential
+  vc: VerifiableCredential,
 ): Promise<ZKProof> {
   const inputs = extractCircuitInputs(vc);
 
@@ -125,7 +127,7 @@ export async function generateProof(
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(
     inputs as unknown as Record<string, unknown>,
     new Uint8Array(wasmBuffer),
-    new Uint8Array(zkeyBuffer)
+    new Uint8Array(zkeyBuffer),
   );
 
   return { proof, publicSignals };
@@ -152,6 +154,6 @@ export async function verifyProof(zkProof: ZKProof): Promise<boolean> {
 export async function exportForSolidity(zkProof: ZKProof): Promise<string> {
   return snarkjs.groth16.exportSolidityCallData(
     zkProof.proof,
-    zkProof.publicSignals
+    zkProof.publicSignals,
   );
 }

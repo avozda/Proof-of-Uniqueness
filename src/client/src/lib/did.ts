@@ -1,6 +1,6 @@
-import { buildEddsa, buildPoseidon } from 'circomlibjs';
-import { bytesToHex } from '@noble/hashes/utils.js';
-import bs58 from 'bs58';
+import { buildEddsa, buildPoseidon } from "circomlibjs";
+import { bytesToHex } from "@noble/hashes/utils.js";
+import bs58 from "bs58";
 
 let eddsa: Awaited<ReturnType<typeof buildEddsa>> | null = null;
 let poseidon: Awaited<ReturnType<typeof buildPoseidon>> | null = null;
@@ -15,12 +15,14 @@ export async function initCrypto(): Promise<void> {
 }
 
 function getEddsa() {
-  if (!eddsa) throw new Error('Crypto not initialized. Call initCrypto() first.');
+  if (!eddsa)
+    throw new Error("Crypto not initialized. Call initCrypto() first.");
   return eddsa;
 }
 
 export function getPoseidon() {
-  if (!poseidon) throw new Error('Crypto not initialized. Call initCrypto() first.');
+  if (!poseidon)
+    throw new Error("Crypto not initialized. Call initCrypto() first.");
   return poseidon;
 }
 
@@ -42,12 +44,12 @@ export interface DIDKeyPair {
 }
 
 export function multibaseEncode(bytes: Uint8Array): string {
-  return 'z' + bs58.encode(bytes);
+  return "z" + bs58.encode(bytes);
 }
 
 export function multibaseDecode(encoded: string): Uint8Array {
-  if (!encoded.startsWith('z')) {
-    throw new Error('Expected Multibase base58-btc encoding (z prefix)');
+  if (!encoded.startsWith("z")) {
+    throw new Error("Expected Multibase base58-btc encoding (z prefix)");
   }
   return bs58.decode(encoded.slice(1));
 }
@@ -56,7 +58,7 @@ export function bigintToBytes(n: bigint, byteLength: number): Uint8Array {
   const bytes = new Uint8Array(byteLength);
   let val = n;
   for (let i = byteLength - 1; i >= 0; i--) {
-    bytes[i] = Number(val & 0xFFn);
+    bytes[i] = Number(val & 0xffn);
     val >>= 8n;
   }
   return bytes;
@@ -91,7 +93,9 @@ export function decodeProofValue(proofValue: string): {
 } {
   const bytes = multibaseDecode(proofValue);
   if (bytes.length !== 96) {
-    throw new Error(`Invalid proofValue: expected 96 bytes, got ${bytes.length}`);
+    throw new Error(
+      `Invalid proofValue: expected 96 bytes, got ${bytes.length}`,
+    );
   }
 
   const r8x = bytesToBigint(bytes.slice(0, 32));
@@ -117,19 +121,25 @@ function encodeBabyJubJubDID(publicKey: EdDSAPublicKey): string {
 }
 
 /** Extract public key coordinates from a verificationMethod DID URL */
-export function extractPublicKeyFromVerificationMethod(verificationMethod: string): {
+export function extractPublicKeyFromVerificationMethod(
+  verificationMethod: string,
+): {
   x: string;
   y: string;
 } {
-  const didPart = verificationMethod.split('#')[0];
-  const prefix = 'did:babyjubjub:';
+  const didPart = verificationMethod.split("#")[0];
+  const prefix = "did:babyjubjub:";
   if (!didPart.startsWith(prefix)) {
-    throw new Error(`Invalid DID method: expected did:babyjubjub:, got ${didPart}`);
+    throw new Error(
+      `Invalid DID method: expected did:babyjubjub:, got ${didPart}`,
+    );
   }
 
   const bytes = multibaseDecode(didPart.slice(prefix.length));
   if (bytes.length !== 64) {
-    throw new Error(`Invalid DID public key: expected 64 bytes, got ${bytes.length}`);
+    throw new Error(
+      `Invalid DID public key: expected 64 bytes, got ${bytes.length}`,
+    );
   }
 
   return {
@@ -160,9 +170,15 @@ export function generateDID(): DIDKeyPair {
   };
 }
 
-export function signMessage(privateKey: Uint8Array, message: bigint): EdDSASignature {
+export function signMessage(
+  privateKey: Uint8Array,
+  message: bigint,
+): EdDSASignature {
   const eddsaInstance = getEddsa();
-  const signature = eddsaInstance.signPoseidon(privateKey, eddsaInstance.F.e(message));
+  const signature = eddsaInstance.signPoseidon(
+    privateKey,
+    eddsaInstance.F.e(message),
+  );
 
   return {
     R8: [
@@ -176,7 +192,7 @@ export function signMessage(privateKey: Uint8Array, message: bigint): EdDSASigna
 export function verifySignature(
   publicKey: EdDSAPublicKey,
   message: bigint,
-  signature: EdDSASignature
+  signature: EdDSASignature,
 ): boolean {
   const eddsaInstance = getEddsa();
 
@@ -193,7 +209,11 @@ export function verifySignature(
     S: signature.S,
   };
 
-  return eddsaInstance.verifyPoseidon(eddsaInstance.F.e(message), sig, pubKeyPoint);
+  return eddsaInstance.verifyPoseidon(
+    eddsaInstance.F.e(message),
+    sig,
+    pubKeyPoint,
+  );
 }
 
 export function poseidonHash(inputs: bigint[]): bigint {
@@ -203,7 +223,8 @@ export function poseidonHash(inputs: bigint[]): bigint {
 }
 
 // Domain separator for VC signatures (prevents cross-protocol attacks)
-export const SIGNATURE_DOMAIN = "eddsa-babyjubjub-poseidon-2024:v1";
+// ≤31 UTF-8 bytes: stringToFieldSimple packs into one field element for Poseidon(domain, root).
+export const SIGNATURE_DOMAIN = "eddsa-bjj-poseidon-2024:v1";
 
 // Field labels for Merkle tree (alphabetically sorted for determinism)
 export const VC_FIELD_LABELS = [
@@ -221,7 +242,7 @@ export const VC_FIELD_LABELS = [
   "vcId",
 ] as const;
 
-export type VCFieldLabel = typeof VC_FIELD_LABELS[number];
+export type VCFieldLabel = (typeof VC_FIELD_LABELS)[number];
 
 export interface MerkleTree {
   root: bigint;
@@ -314,7 +335,7 @@ export function getMerklePath(tree: MerkleTree, leafIndex: number): MerklePath {
 export function verifyMerklePath(
   leaf: bigint,
   path: MerklePath,
-  root: bigint
+  root: bigint,
 ): boolean {
   let current = leaf;
   for (let i = 0; i < path.siblings.length; i++) {
@@ -362,10 +383,14 @@ export function dateToField(dateStr: string): bigint {
 /** Encode sex as field element: male=0, female=1, other=2, unknown=3 */
 export function sexToField(sex: string): bigint {
   switch (sex.toLowerCase()) {
-    case 'male': return BigInt(0);
-    case 'female': return BigInt(1);
-    case 'other': return BigInt(2);
-    default: return BigInt(3);
+    case "male":
+      return BigInt(0);
+    case "female":
+      return BigInt(1);
+    case "other":
+      return BigInt(2);
+    default:
+      return BigInt(3);
   }
 }
 
@@ -410,8 +435,10 @@ export function buildFieldMap(vcFields: VCFields): Map<VCFieldLabel, bigint> {
 }
 
 /** Compute Merkle tree leaves from labeled fields (in label order) */
-export function computeMerkleLeaves(fieldMap: Map<VCFieldLabel, bigint>): bigint[] {
-  return VC_FIELD_LABELS.map(label => {
+export function computeMerkleLeaves(
+  fieldMap: Map<VCFieldLabel, bigint>,
+): bigint[] {
+  return VC_FIELD_LABELS.map((label) => {
     const value = fieldMap.get(label);
     if (value === undefined) {
       throw new Error(`Missing field value for label: ${label}`);
@@ -424,7 +451,7 @@ export function computeMerkleLeaves(fieldMap: Map<VCFieldLabel, bigint>): bigint
 export function createVCSignature(
   privateKey: Uint8Array,
   publicKey: EdDSAPublicKey,
-  vcFields: VCFields
+  vcFields: VCFields,
 ): VCSignatureData {
   const fieldValues = buildFieldMap(vcFields);
   const leaves = computeMerkleLeaves(fieldValues);
@@ -448,7 +475,7 @@ export function toHex(bytes: Uint8Array): string {
 }
 
 export function fromHex(hex: string): Uint8Array {
-  const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
+  const cleanHex = hex.startsWith("0x") ? hex.slice(2) : hex;
   const bytes = new Uint8Array(cleanHex.length / 2);
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = parseInt(cleanHex.slice(i * 2, i * 2 + 2), 16);
@@ -457,7 +484,7 @@ export function fromHex(hex: string): Uint8Array {
 }
 
 export function bigintToHex(n: bigint): string {
-  return n.toString(16).padStart(64, '0');
+  return n.toString(16).padStart(64, "0");
 }
 
 /** Poseidon hash of byte array (split into 31-byte chunks) */
