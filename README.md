@@ -79,7 +79,7 @@
 ```
 src/
 ├── circuits/                 # Circom ZK circuits
-│   ├── Enrollment.circom     # Main enrollment circuit
+│   ├── IdentityEnrollment.circom  # Main identity enrollment circuit
 │   └── build/                # Compiled circuits (wasm, zkey, r1cs)
 │
 ├── client/                   # Demo application (for testing)
@@ -97,7 +97,7 @@ src/
 │
 └── smart-contracts/          # Solidity contracts (Foundry)
     ├── src/
-    │   ├── ProofOfUniqueness.sol    # Main contract
+    │   ├── IdentityRegistry.sol     # Main contract
     │   └── Groth16Verifier.sol      # ZK proof verifier
     └── script/               # Deployment scripts
 ```
@@ -151,7 +151,7 @@ anvil
 
 # In another terminal, deploy contracts
 cd src/smart-contracts
-forge script script/ProofOfUniqueness.s.sol --rpc-url http://localhost:8545 --broadcast
+forge script script/IdentityRegistry.s.sol --rpc-url http://localhost:8545 --broadcast
 ```
 
 ### Demo Flow
@@ -166,7 +166,7 @@ forge script script/ProofOfUniqueness.s.sol --rpc-url http://localhost:8545 --br
 
 ### ZK Circuit (`src/circuits/`)
 
-The Enrollment circuit verifies:
+The IdentityEnrollment circuit verifies:
 
 1. **Signature Validity** — EdDSA Poseidon signature from a trusted issuer
 2. **Data Integrity** — All credential fields match the signed message
@@ -185,7 +185,7 @@ The Enrollment circuit verifies:
 
 ### Smart Contract (`src/smart-contracts/`)
 
-The `ProofOfUniqueness` contract:
+The `IdentityRegistry` contract:
 
 - **Enrollment** — Verifies ZK proof and stores identity record
 - **Issuer Management** — Add/remove trusted issuers by public key
