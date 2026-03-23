@@ -1,10 +1,9 @@
 import { decodeErrorResult } from "viem";
-import { proofOfUniquenessAbi } from "./contractAbi";
+import { identityRegistryAbi } from "./contractAbi";
 
 /** First 4 bytes of keccak256 — used when decode fails but data is present */
 const REVERT_SELECTOR_MESSAGES: Record<string, string> = {
-  "0x6b410356":
-    "This identity has already been enrolled on this contract.",
+  "0x6b410356": "This identity has already been enrolled on this contract.",
   "0x864f22fb":
     "Issuer not trusted. Register this issuer’s public key on the contract first.",
   "0x09bde339": "The ZK proof was rejected by the on-chain verifier.",
@@ -24,7 +23,11 @@ const ERROR_NAME_MESSAGES: Record<string, string> = {
 };
 
 function isHexData(value: unknown): value is `0x${string}` {
-  return typeof value === "string" && /^0x[0-9a-fA-F]+$/.test(value) && value.length >= 10;
+  return (
+    typeof value === "string" &&
+    /^0x[0-9a-fA-F]+$/.test(value) &&
+    value.length >= 10
+  );
 }
 
 function extractRevertData(err: unknown, depth = 0): `0x${string}` | undefined {
@@ -91,12 +94,12 @@ function messageFromDecodedError(errorName: string): string | undefined {
 /**
  * Prefer decoded custom errors from revert data; avoid showing selector bytes mis-read as UTF-8.
  */
-export function formatProofOfUniquenessTxError(err: Error): string {
+export function formatIdentityRegistryTxError(err: Error): string {
   const data = extractRevertData(err) ?? deepFindHexData(err);
   if (data) {
     try {
       const decoded = decodeErrorResult({
-        abi: proofOfUniquenessAbi,
+        abi: identityRegistryAbi,
         data,
       });
       const friendly = messageFromDecodedError(decoded.errorName);
@@ -109,7 +112,8 @@ export function formatProofOfUniquenessTxError(err: Error): string {
   }
 
   const short =
-    "shortMessage" in err && typeof (err as { shortMessage?: string }).shortMessage === "string"
+    "shortMessage" in err &&
+    typeof (err as { shortMessage?: string }).shortMessage === "string"
       ? (err as { shortMessage: string }).shortMessage
       : null;
   let msg = short ?? err.message;
@@ -134,7 +138,9 @@ export function formatProofOfUniquenessTxError(err: Error): string {
   }
 
   if (
-    /user rejected|user denied|denied transaction|rejected the request/i.test(msg)
+    /user rejected|user denied|denied transaction|rejected the request/i.test(
+      msg,
+    )
   ) {
     return "Request was rejected in the wallet.";
   }
@@ -159,12 +165,16 @@ export function formatProofOfUniquenessTxError(err: Error): string {
       const hex = extractRevertData(err) ?? deepFindHexData(err);
       if (hex) {
         try {
-          const decoded = decodeErrorResult({ abi: proofOfUniquenessAbi, data: hex });
+          const decoded = decodeErrorResult({
+            abi: identityRegistryAbi,
+            data: hex,
+          });
           const friendly = messageFromDecodedError(decoded.errorName);
           if (friendly) return friendly;
         } catch {
           const sel = hex.slice(0, 10).toLowerCase();
-          if (REVERT_SELECTOR_MESSAGES[sel]) return REVERT_SELECTOR_MESSAGES[sel];
+          if (REVERT_SELECTOR_MESSAGES[sel])
+            return REVERT_SELECTOR_MESSAGES[sel];
         }
       }
       return "The transaction reverted on-chain (the RPC reported a garbled revert reason). If you enrolled twice, this identity is likely already registered.";

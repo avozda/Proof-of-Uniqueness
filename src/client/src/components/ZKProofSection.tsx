@@ -11,8 +11,8 @@ import { injected } from "wagmi/connectors";
 import { generateProof, verifyProof, parsePublicSignals } from "../lib/proof";
 import type { ZKProof, ProofOutputs } from "../lib/proof";
 import type { VerifiableCredential } from "../lib/vc";
-import { proofOfUniquenessAbi } from "../lib/contractAbi";
-import { formatProofOfUniquenessTxError } from "../lib/contractErrors";
+import { identityRegistryAbi } from "../lib/contractAbi";
+import { formatIdentityRegistryTxError } from "../lib/contractErrors";
 import { CONTRACT_ADDRESSES, setContractAddress } from "../lib/wagmi";
 
 interface ZKProofSectionProps {
@@ -30,7 +30,7 @@ export function ZKProofSection({
   const [proofVerified, setProofVerified] = useState<boolean | null>(null);
   const [proofError, setProofError] = useState<string | null>(null);
   const [contractAddress, setContractAddressInput] = useState(
-    CONTRACT_ADDRESSES.proofOfUniqueness,
+    CONTRACT_ADDRESSES.identityRegistry,
   );
 
   // Wagmi hooks
@@ -89,7 +89,7 @@ export function ZKProofSection({
     refetch: refetchIssuerTrust,
   } = useReadContract({
     address: contractAddressValid ? contractAddress : undefined,
-    abi: proofOfUniquenessAbi,
+    abi: identityRegistryAbi,
     functionName: "isIssuerTrusted",
     args: [issuerPublicKey.x, issuerPublicKey.y],
     query: {
@@ -113,10 +113,10 @@ export function ZKProofSection({
 
   const displayTxError =
     submitError != null
-      ? formatProofOfUniquenessTxError(submitError)
+      ? formatIdentityRegistryTxError(submitError)
       : txOutcomeSettled && receiptWaitFailed
         ? receiptWaitError instanceof Error
-          ? formatProofOfUniquenessTxError(receiptWaitError)
+          ? formatIdentityRegistryTxError(receiptWaitError)
           : String(receiptWaitError)
         : txOutcomeSettled && txFailedOnChain
           ? receipt?.status === "reverted"
@@ -140,10 +140,10 @@ export function ZKProofSection({
 
   const displayIssuerTxError =
     issuerSubmitError != null
-      ? formatProofOfUniquenessTxError(issuerSubmitError)
+      ? formatIdentityRegistryTxError(issuerSubmitError)
       : issuerTxOutcomeSettled && issuerReceiptWaitFailed
         ? issuerReceiptWaitError instanceof Error
-          ? formatProofOfUniquenessTxError(issuerReceiptWaitError)
+          ? formatIdentityRegistryTxError(issuerReceiptWaitError)
           : String(issuerReceiptWaitError)
         : issuerTxOutcomeSettled && issuerTxFailedOnChain
           ? issuerReceipt?.status === "reverted"
@@ -193,7 +193,7 @@ export function ZKProofSection({
     resetIssuerSubmit();
     writeIssuerTx({
       address: contractAddress,
-      abi: proofOfUniquenessAbi,
+      abi: identityRegistryAbi,
       functionName: "addTrustedIssuer",
       args: [issuerPublicKey.x, issuerPublicKey.y],
     });
@@ -238,7 +238,7 @@ export function ZKProofSection({
     resetSubmit();
     writeContract({
       address: contractAddress,
-      abi: proofOfUniquenessAbi,
+      abi: identityRegistryAbi,
       functionName: "enroll",
       args: [pA, pB, pC, pubSignals],
     });

@@ -118,7 +118,7 @@ export async function generateProof(
 ): Promise<ZKProof> {
   const inputs = extractCircuitInputs(vc);
 
-  const wasmResponse = await fetch("/circuits/Enrollment.wasm");
+  const wasmResponse = await fetch("/circuits/IdentityEnrollment.wasm");
   const wasmBuffer = await wasmResponse.arrayBuffer();
 
   const zkeyResponse = await fetch("/circuits/IdentityEnrollment_0001.zkey");

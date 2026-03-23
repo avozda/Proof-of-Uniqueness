@@ -3,7 +3,7 @@ pragma circom 2.2.2;
 include "../../node_modules/circomlib/circuits/eddsaposeidon.circom";
 include "../../node_modules/circomlib/circuits/smt/smthash_poseidon.circom";
 
-// Enrollment(numFields, treeDepth): VC has numFields labeled leaves; Merkle tree has 2^treeDepth leaves (pad extras with 0).
+// IdentityEnrollment(numFields, treeDepth): VC has numFields labeled leaves; Merkle tree has 2^treeDepth leaves (pad extras with 0).
 // Circomlib has SMT helpers, not a dense Merkle builder; SMTHash2 is Poseidon(L,R) and matches our internal node hashing.
 
 // Binary Merkle root over 2^levels leaves (predeclare hashers; Circom forbids `component` inside unknown loops).
@@ -56,7 +56,7 @@ template LabeledLeaf(labelConst) {
 
 // Verifies a VC signature using Merkle tree structure with domain separation.
 // The signed message is: Poseidon(domainSeparator, merkleRoot)
-template Enrollment(numFields, treeDepth) {
+template IdentityEnrollment(numFields, treeDepth) {
     var numLeaves = 1 << treeDepth;
 
     // Domain separator (precomputed from SIGNATURE_DOMAIN in did.ts; ≤31 bytes for single field element)
@@ -152,4 +152,4 @@ template Enrollment(numFields, treeDepth) {
 
 
 // 12 VC fields; Merkle tree depth 4 => 16 leaves (pad unused with 0)
-component main = Enrollment(12, 4);
+component main = IdentityEnrollment(12, 4);
