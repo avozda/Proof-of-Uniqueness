@@ -10,7 +10,7 @@ import { injected } from "wagmi/connectors";
 import { generateProof, verifyProof, parsePublicSignals } from "../lib/proof";
 import type { ZKProof, ProofOutputs } from "../lib/proof";
 import type { VerifiableCredential } from "../lib/vc";
-import { proofOfUniquenessAbi } from "../lib/contractAbi";
+import { identityRegistryAbi } from "../lib/contractAbi";
 import { CONTRACT_ADDRESSES, setContractAddress } from "../lib/wagmi";
 
 interface ZKProofSectionProps {
@@ -24,7 +24,7 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
   const [proofVerified, setProofVerified] = useState<boolean | null>(null);
   const [proofError, setProofError] = useState<string | null>(null);
   const [contractAddress, setContractAddressInput] = useState(
-    CONTRACT_ADDRESSES.proofOfUniqueness
+    CONTRACT_ADDRESSES.identityRegistry
   );
 
   // Wagmi hooks
@@ -123,7 +123,7 @@ export function ZKProofSection({ credential }: ZKProofSectionProps) {
     try {
       writeContract({
         address: contractAddress,
-        abi: proofOfUniquenessAbi,
+        abi: identityRegistryAbi,
         functionName: "enroll",
         args: [pA, pB, pC, pubSignals],
       });

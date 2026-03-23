@@ -2,12 +2,12 @@
 pragma solidity ^0.8.13;
 
 import {Script, console} from "forge-std/Script.sol";
-import {ProofOfUniqueness} from "../src/ProofOfUniqueness.sol";
+import {IdentityRegistry} from "../src/IdentityRegistry.sol";
 import {Groth16Verifier} from "../src/Groth16Verifier.sol";
 
-contract ProofOfUniquenessScript is Script {
+contract IdentityRegistryScript is Script {
     Groth16Verifier public verifier;
-    ProofOfUniqueness public proofOfUniqueness;
+    IdentityRegistry public identityRegistry;
 
     // Default trusted issuer public key (replace with actual issuer keys in production)
     // These are example values - update with real issuer public key coordinates
@@ -25,16 +25,16 @@ contract ProofOfUniquenessScript is Script {
         verifier = new Groth16Verifier();
         console.log("Groth16Verifier deployed at:", address(verifier));
 
-        // Deploy ProofOfUniqueness with the verifier address
-        proofOfUniqueness = new ProofOfUniqueness(address(verifier));
+        // Deploy IdentityRegistry with the verifier address
+        identityRegistry = new IdentityRegistry(address(verifier));
         console.log(
-            "ProofOfUniqueness deployed at:",
-            address(proofOfUniqueness)
+            "IdentityRegistry deployed at:",
+            address(identityRegistry)
         );
 
         // Add default trusted issuer if configured
         if (DEFAULT_ISSUER_PUB_KEY_X != 0 && DEFAULT_ISSUER_PUB_KEY_Y != 0) {
-            proofOfUniqueness.addTrustedIssuer(
+            identityRegistry.addTrustedIssuer(
                 DEFAULT_ISSUER_PUB_KEY_X,
                 DEFAULT_ISSUER_PUB_KEY_Y
             );

@@ -4,7 +4,7 @@ include "../../node_modules/circomlib/circuits/eddsaposeidon.circom";
 include "../../node_modules/circomlib/circuits/poseidon.circom";
 
 /**
- * Enrollment Circuit
+ * Identity Enrollment Circuit
  * 
  * This circuit verifies a Verifiable Credential signature and computes
  * a privacy-preserving hash of the identity claim.
@@ -25,7 +25,7 @@ include "../../node_modules/circomlib/circuits/poseidon.circom";
  *   - verificationKey: The biometric verification key (2 field elements)
  *   - signerPubKey: The issuer's public key (for trust verification)
  */
-template Enrollment() {  
+template IdentityEnrollment() {
     // ========================================
     // Input signals for VC fields
     // ========================================
@@ -144,4 +144,4 @@ template Enrollment() {
 }
 
 
-component main = Enrollment();
+component main = IdentityEnrollment();

@@ -1,4 +1,4 @@
-export const proofOfUniquenessAbi = [
+export const identityRegistryAbi = [
   {
     type: "constructor",
     inputs: [{ name: "_verifier", type: "address", internalType: "address" }],
@@ -41,7 +41,7 @@ export const proofOfUniquenessAbi = [
       {
         name: "record",
         type: "tuple",
-        internalType: "struct ProofOfUniqueness.IdentityRecord",
+        internalType: "struct IdentityRegistry.IdentityRecord",
         components: [
           { name: "validUntil", type: "uint256", internalType: "uint256" },
           { name: "issuerPubKeyX", type: "uint256", internalType: "uint256" },
@@ -235,4 +235,3 @@ export const proofOfUniquenessAbi = [
   { type: "error", name: "IssuerNotTrusted", inputs: [] },
   { type: "error", name: "NotOwner", inputs: [] },
 ] as const;
-

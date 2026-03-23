@@ -66,10 +66,10 @@ export async function generateProof(
   const inputs = extractCircuitInputs(vc);
 
   // Fetch the WASM and zkey files
-  const wasmResponse = await fetch("/circuits/Enrollment.wasm");
+  const wasmResponse = await fetch("/circuits/IdentityEnrollment.wasm");
   const wasmBuffer = await wasmResponse.arrayBuffer();
 
-  const zkeyResponse = await fetch("/circuits/Enrollment_0001.zkey");
+  const zkeyResponse = await fetch("/circuits/IdentityEnrollment_0001.zkey");
   const zkeyBuffer = await zkeyResponse.arrayBuffer();
 
   // Generate the proof
@@ -117,4 +117,3 @@ export async function exportForSolidity(zkProof: ZKProof): Promise<string> {
     zkProof.publicSignals
   );
 }
-

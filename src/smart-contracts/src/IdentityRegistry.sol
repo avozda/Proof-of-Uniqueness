@@ -4,11 +4,11 @@ pragma solidity ^0.8.13;
 import {Groth16Verifier} from "./Groth16Verifier.sol";
 
 /**
- * @title ProofOfUniqueness
+ * @title IdentityRegistry
  * @notice Contract for managing biometric identity enrollments with ZK proof verification
  * @dev Uses Groth16 proofs to verify identity claims without revealing private data
  */
-contract ProofOfUniqueness {
+contract IdentityRegistry {
     // ============ Structs ============
 
     struct IdentityRecord {
