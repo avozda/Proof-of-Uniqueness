@@ -15,8 +15,13 @@ export interface CredentialSubject {
   id: string;
   name: string;
   dateOfBirth: string;
+  placeOfBirth: string;
   nationality: string;
   sex: string;
+  permanentAddressHash: {
+    type: string;
+    value: string;
+  };
   biometricTemplate: {
     type: string;
     template: string;
@@ -53,6 +58,8 @@ export interface VerifiableCredential {
 export interface FormData {
   name: string;
   dateOfBirth: string;
+  placeOfBirth: string;
+  permanentAddress: string;
   nationality: string;
   sex: string;
 }
@@ -86,8 +93,12 @@ export function createVerifiableCredential(
   const subjectIdField = stringToField(personId);
   const nameField = stringToField(formData.name);
   const dobField = dateToField(formData.dateOfBirth);
+  const placeOfBirthField = stringToField(formData.placeOfBirth);
   const sexField = sexToField(formData.sex);
   const nationalityField = stringToField(formData.nationality);
+  const permanentAddressHashField = hashBytes(
+    new TextEncoder().encode(formData.permanentAddress)
+  );
   const validFromField = dateToField(now.toISOString());
   const validUntilField = dateToField(validUntil.toISOString());
   const issuerField = stringToField(issuer.did);
@@ -99,8 +110,10 @@ export function createVerifiableCredential(
     credentialSubjectId: subjectIdField,
     name: nameField,
     dob: dobField,
+    placeOfBirth: placeOfBirthField,
     sex: sexField,
     nationality: nationalityField,
+    permanentAddressHash: permanentAddressHashField,
     validFrom: validFromField,
     issuer: issuerField,
     validUntil: validUntilField,
@@ -130,8 +143,13 @@ export function createVerifiableCredential(
       id: personId,
       name: formData.name,
       dateOfBirth: formData.dateOfBirth,
+      placeOfBirth: formData.placeOfBirth,
       nationality: formData.nationality,
       sex: formData.sex,
+      permanentAddressHash: {
+        type: "PoseidonHash",
+        value: permanentAddressHashField.toString(),
+      },
       biometricTemplate: {
         type: "FuzzySignatureTemplate",
         template: toHex(sketch),

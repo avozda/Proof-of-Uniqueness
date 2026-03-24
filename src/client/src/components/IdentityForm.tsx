@@ -16,6 +16,8 @@ export function IdentityForm({
   const isFormValid =
     formData.name &&
     formData.dateOfBirth &&
+    formData.placeOfBirth &&
+    formData.permanentAddress &&
     formData.nationality &&
     formData.sex;
 
@@ -66,6 +68,32 @@ export function IdentityForm({
         </div>
 
         <div className="form-group">
+          <label htmlFor="placeOfBirth">Place of Birth</label>
+          <input
+            type="text"
+            id="placeOfBirth"
+            name="placeOfBirth"
+            value={formData.placeOfBirth}
+            onChange={onInputChange}
+            placeholder="Prague"
+            required
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="permanentAddress">Permanent Address</label>
+          <input
+            type="text"
+            id="permanentAddress"
+            name="permanentAddress"
+            value={formData.permanentAddress}
+            onChange={onInputChange}
+            placeholder="Main St 123, Prague"
+            required
+          />
+        </div>
+
+        <div className="form-group">
           <label htmlFor="sex">Sex</label>
           <select
             id="sex"
@@ -102,4 +130,3 @@ export function IdentityForm({
     </section>
   );
 }
-

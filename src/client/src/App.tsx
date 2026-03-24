@@ -69,6 +69,8 @@ function App() {
   const [formData, setFormData] = useState<FormData>({
     name: "",
     dateOfBirth: "",
+    placeOfBirth: "",
+    permanentAddress: "",
     nationality: "",
     sex: "",
   });

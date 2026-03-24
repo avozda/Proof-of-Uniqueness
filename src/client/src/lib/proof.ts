@@ -56,8 +56,10 @@ function extractFieldValues(vc: VerifiableCredential): VCFields {
     credentialSubjectId: stringToField(subject.id),
     name: stringToField(subject.name),
     dob: dateToField(subject.dateOfBirth),
+    placeOfBirth: stringToField(subject.placeOfBirth),
     sex: sexToField(subject.sex),
     nationality: stringToField(subject.nationality),
+    permanentAddressHash: BigInt(subject.permanentAddressHash.value),
     validFrom: dateToField(vc.validFrom),
     validUntil: dateToField(vc.validUntil),
     issuer: stringToField(vc.issuer.id),
@@ -82,6 +84,8 @@ export function extractCircuitInputs(vc: VerifiableCredential): CircuitInputs {
     fields.issuer, // issuer
     fields.name, // name
     fields.nationality, // nationality
+    fields.permanentAddressHash, // permanentAddressHash
+    fields.placeOfBirth, // placeOfBirth
     fields.sex, // sex
     fields.sketchHash, // sketchHash
     fields.validFrom, // validFrom

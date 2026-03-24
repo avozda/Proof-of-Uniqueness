@@ -234,4 +234,47 @@ export const identityRegistryAbi = [
   { type: "error", name: "InvalidProof", inputs: [] },
   { type: "error", name: "IssuerNotTrusted", inputs: [] },
   { type: "error", name: "NotOwner", inputs: [] },
+  {
+    type: "function",
+    name: "countInvalidRecords",
+    inputs: [],
+    outputs: [
+      { name: "expiredCount", type: "uint256", internalType: "uint256" },
+      { name: "untrustedCount", type: "uint256", internalType: "uint256" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "purgeIdentity",
+    inputs: [{ name: "hashID", type: "uint256", internalType: "uint256" }],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "purgeInvalidRecords",
+    inputs: [
+      { name: "maxIterations", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [
+      { name: "purgedCount", type: "uint256", internalType: "uint256" },
+      { name: "remainingCount", type: "uint256", internalType: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "event",
+    name: "IdentityPurged",
+    inputs: [
+      { name: "hashID", type: "uint256", indexed: true, internalType: "uint256" },
+      {
+        name: "reason",
+        type: "uint8",
+        indexed: false,
+        internalType: "enum IdentityRegistry.PurgeReason",
+      },
+    ],
+    anonymous: false,
+  },
 ] as const;

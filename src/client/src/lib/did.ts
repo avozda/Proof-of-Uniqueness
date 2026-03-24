@@ -235,6 +235,8 @@ export const VC_FIELD_LABELS = [
   "issuer",
   "name",
   "nationality",
+  "permanentAddressHash",
+  "placeOfBirth",
   "sex",
   "sketchHash",
   "validFrom",
@@ -407,8 +409,10 @@ export interface VCFields {
   credentialSubjectId: bigint;
   name: bigint;
   dob: bigint;
+  placeOfBirth: bigint;
   sex: bigint;
   nationality: bigint;
+  permanentAddressHash: bigint;
   validFrom: bigint;
   issuer: bigint;
   validUntil: bigint;
@@ -426,6 +430,8 @@ export function buildFieldMap(vcFields: VCFields): Map<VCFieldLabel, bigint> {
   fieldMap.set("issuer", vcFields.issuer);
   fieldMap.set("name", vcFields.name);
   fieldMap.set("nationality", vcFields.nationality);
+  fieldMap.set("permanentAddressHash", vcFields.permanentAddressHash);
+  fieldMap.set("placeOfBirth", vcFields.placeOfBirth);
   fieldMap.set("sex", vcFields.sex);
   fieldMap.set("sketchHash", vcFields.sketchHash);
   fieldMap.set("validFrom", vcFields.validFrom);
