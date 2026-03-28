@@ -38,6 +38,12 @@ contract IdentityRegistry {
     /// @notice Array of all registered hashIDs for enumeration
     uint256[] public registeredHashIDs;
 
+    /// @notice Max age (in blocks) for a revocation challenge
+    uint256 public constant MAX_REVOKE_BLOCK_AGE = 20;
+
+    bytes32 private constant REVOKE_DOMAIN =
+        keccak256("IdentityRegistry::Revoke:v1");
+
     // ============ Events ============
 
     event IdentityEnrolled(
@@ -51,6 +57,11 @@ contract IdentityRegistry {
     event OwnerAdded(address indexed owner);
     event OwnerRemoved(address indexed owner);
     event IdentityPurged(uint256 indexed hashID, PurgeReason reason);
+    event IdentityRevoked(
+        uint256 indexed hashID,
+        address indexed signer,
+        uint256 challengeBlock
+    );
 
     /// @notice Reason for identity purge
     enum PurgeReason {
@@ -66,6 +77,10 @@ contract IdentityRegistry {
     error IdentityNotFound();
     error InvalidProof();
     error IdentityExpired();
+    error ChallengeBlockInFuture();
+    error StaleChallenge();
+    error InvalidRevocationSignature();
+    error RevocationSignerMismatch();
 
     // ============ Modifiers ============
 
@@ -197,6 +212,54 @@ contract IdentityRegistry {
     ) external view returns (bool isValid) {
         IdentityRecord storage record = identities[hashID];
         return record.exists && block.timestamp <= record.validUntil;
+    }
+
+    /**
+     * @notice Revoke an identity by submitting a signature from the enrolled biometric key
+     * @dev Signature challenge binds contract + chain + hashID + challengeBlock
+     * @param hashID The identity hash ID to revoke
+     * @param challengeBlock The block number that was signed
+     * @param v Signature recovery id
+     * @param r Signature part r
+     * @param s Signature part s
+     */
+    function revokeIdentity(
+        uint256 hashID,
+        uint256 challengeBlock,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external {
+        IdentityRecord storage record = identities[hashID];
+        if (!record.exists) revert IdentityNotFound();
+
+        if (challengeBlock > block.number) revert ChallengeBlockInFuture();
+        if (block.number - challengeBlock > MAX_REVOKE_BLOCK_AGE)
+            revert StaleChallenge();
+
+        bytes32 challengeDigest = keccak256(
+            abi.encode(
+                REVOKE_DOMAIN,
+                address(this),
+                block.chainid,
+                hashID,
+                challengeBlock
+            )
+        );
+
+        uint8 vv = v;
+        if (vv < 27) vv += 27;
+        address recovered = ecrecover(challengeDigest, vv, r, s);
+        if (recovered == address(0)) revert InvalidRevocationSignature();
+
+        address expected = _secp256k1Address(
+            record.verificationKeyX,
+            record.verificationKeyY
+        );
+        if (recovered != expected) revert RevocationSignerMismatch();
+
+        _deleteIdentity(hashID);
+        emit IdentityRevoked(hashID, recovered, challengeBlock);
     }
 
     /**
@@ -421,5 +484,32 @@ contract IdentityRegistry {
         }
 
         emit IdentityPurged(hashID, reason);
+    }
+
+    function _deleteIdentity(uint256 hashID) internal {
+        delete identities[hashID];
+
+        uint256 length = registeredHashIDs.length;
+        for (uint256 i = 0; i < length; i++) {
+            if (registeredHashIDs[i] == hashID) {
+                if (i != length - 1) {
+                    registeredHashIDs[i] = registeredHashIDs[length - 1];
+                }
+                registeredHashIDs.pop();
+                break;
+            }
+        }
+    }
+
+    function _secp256k1Address(
+        uint256 x,
+        uint256 y
+    ) internal pure returns (address) {
+        if (y == 0) {
+            return address(uint160(x));
+        }
+        bytes memory pubKey = abi.encodePacked(bytes1(0x04), bytes32(x), bytes32(y));
+        bytes32 digest = keccak256(pubKey);
+        return address(uint160(uint256(digest)));
     }
 }

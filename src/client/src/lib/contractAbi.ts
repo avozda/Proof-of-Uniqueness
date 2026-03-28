@@ -277,4 +277,52 @@ export const identityRegistryAbi = [
     ],
     anonymous: false,
   },
+  {
+    type: "function",
+    name: "MAX_REVOKE_BLOCK_AGE",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "revokeIdentity",
+    inputs: [
+      { name: "hashID", type: "uint256", internalType: "uint256" },
+      {
+        name: "challengeBlock",
+        type: "uint256",
+        internalType: "uint256",
+      },
+      { name: "v", type: "uint8", internalType: "uint8" },
+      { name: "r", type: "bytes32", internalType: "bytes32" },
+      { name: "s", type: "bytes32", internalType: "bytes32" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "event",
+    name: "IdentityRevoked",
+    inputs: [
+      { name: "hashID", type: "uint256", indexed: true, internalType: "uint256" },
+      {
+        name: "signer",
+        type: "address",
+        indexed: true,
+        internalType: "address",
+      },
+      {
+        name: "challengeBlock",
+        type: "uint256",
+        indexed: false,
+        internalType: "uint256",
+      },
+    ],
+    anonymous: false,
+  },
+  { type: "error", name: "ChallengeBlockInFuture", inputs: [] },
+  { type: "error", name: "StaleChallenge", inputs: [] },
+  { type: "error", name: "InvalidRevocationSignature", inputs: [] },
+  { type: "error", name: "RevocationSignerMismatch", inputs: [] },
 ] as const;

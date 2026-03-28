@@ -11,6 +11,13 @@ const REVERT_SELECTOR_MESSAGES: Record<string, string> = {
     "Only the contract owner can perform this action. Connect the deployer wallet.",
   "0xd3c12856": "No identity record exists for this hash ID.",
   "0x0ce8eac5": "This identity credential has expired on-chain.",
+  "0x2ae1f41d": "The signed challenge block is in the future.",
+  "0xaa2bf635":
+    "The signed challenge is stale. Sign a fresh challenge and retry.",
+  "0xa9615b40":
+    "Revocation signature is invalid. Unlock with the correct biometric sketch.",
+  "0xc12559d9":
+    "Signature does not match the enrolled verification key for this identity.",
 };
 
 const ERROR_NAME_MESSAGES: Record<string, string> = {
@@ -20,6 +27,10 @@ const ERROR_NAME_MESSAGES: Record<string, string> = {
   NotOwner: REVERT_SELECTOR_MESSAGES["0x30cd7471"],
   IdentityNotFound: REVERT_SELECTOR_MESSAGES["0xd3c12856"],
   IdentityExpired: REVERT_SELECTOR_MESSAGES["0x0ce8eac5"],
+  ChallengeBlockInFuture: REVERT_SELECTOR_MESSAGES["0x2ae1f41d"],
+  StaleChallenge: REVERT_SELECTOR_MESSAGES["0xaa2bf635"],
+  InvalidRevocationSignature: REVERT_SELECTOR_MESSAGES["0xa9615b40"],
+  RevocationSignerMismatch: REVERT_SELECTOR_MESSAGES["0xc12559d9"],
 };
 
 function isHexData(value: unknown): value is `0x${string}` {
@@ -135,6 +146,21 @@ export function formatIdentityRegistryTxError(err: Error): string {
   }
   if (msg.includes("IdentityExpired")) {
     return ERROR_NAME_MESSAGES.IdentityExpired;
+  }
+  if (msg.includes("ChallengeBlockInFuture") || msg.includes("0x2ae1f41d")) {
+    return ERROR_NAME_MESSAGES.ChallengeBlockInFuture;
+  }
+  if (msg.includes("StaleChallenge") || msg.includes("0xaa2bf635")) {
+    return ERROR_NAME_MESSAGES.StaleChallenge;
+  }
+  if (
+    msg.includes("InvalidRevocationSignature") ||
+    msg.includes("0xa9615b40")
+  ) {
+    return ERROR_NAME_MESSAGES.InvalidRevocationSignature;
+  }
+  if (msg.includes("RevocationSignerMismatch") || msg.includes("0xc12559d9")) {
+    return ERROR_NAME_MESSAGES.RevocationSignerMismatch;
   }
 
   if (

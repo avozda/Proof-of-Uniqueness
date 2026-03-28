@@ -1,5 +1,7 @@
 import { buildEddsa, buildPoseidon } from "circomlibjs";
 import { bytesToHex } from "@noble/hashes/utils.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
 import bs58 from "bs58";
 
 let eddsa: Awaited<ReturnType<typeof buildEddsa>> | null = null;
@@ -509,19 +511,9 @@ export function hashBytes(bytes: Uint8Array): bigint {
 
 /** Split verification key bytes into two field elements */
 export function vkToFieldElements(vk: Uint8Array): [bigint, bigint] {
-  const half = Math.ceil(vk.length / 2);
-  const part1 = vk.slice(0, half);
-  const part2 = vk.slice(half);
-
-  let x = BigInt(0);
-  for (let i = 0; i < part1.length; i++) {
-    x = (x << BigInt(8)) | BigInt(part1[i]);
-  }
-
-  let y = BigInt(0);
-  for (let i = 0; i < part2.length; i++) {
-    y = (y << BigInt(8)) | BigInt(part2[i]);
-  }
-
-  return [x, y];
+  const point = secp256k1.Point.fromHex(bytesToHex(vk));
+  const uncompressed = point.toBytes(false);
+  const digest = keccak_256(uncompressed.slice(1));
+  const addressBytes = digest.slice(12);
+  return [bytesToBigint(addressBytes), 0n];
 }

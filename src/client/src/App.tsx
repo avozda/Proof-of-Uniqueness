@@ -67,12 +67,12 @@ function saveDID(did: DIDKeyPair): void {
 
 function App() {
   const [formData, setFormData] = useState<FormData>({
-    name: "",
-    dateOfBirth: "",
-    placeOfBirth: "",
-    permanentAddress: "",
-    nationality: "",
-    sex: "",
+    name: "Jan Novak",
+    dateOfBirth: "1990-06-15",
+    placeOfBirth: "Prague",
+    permanentAddress: "Main St 123, Prague",
+    nationality: "Czech",
+    sex: "male",
   });
 
   const [credential, setCredential] = useState<VerifiableCredential | null>(
@@ -185,6 +185,7 @@ function App() {
             <ZKProofSection
               credential={credential}
               issuerPublicKey={issuerDID.publicKey}
+              biometricData={biometricData}
             />
           </section>
         )}
