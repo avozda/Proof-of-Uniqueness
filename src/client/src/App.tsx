@@ -76,10 +76,10 @@ function App() {
   });
 
   const [credential, setCredential] = useState<VerifiableCredential | null>(
-    null
+    null,
   );
   const [biometricData, setBiometricData] = useState<MockBiometricData | null>(
-    null
+    null,
   );
   const [isGenerating, setIsGenerating] = useState(false);
   const [cryptoReady, setCryptoReady] = useState(false);
@@ -111,7 +111,7 @@ function App() {
   };
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -132,9 +132,9 @@ function App() {
       const vc = createVerifiableCredential(
         formData,
         issuerDID,
-        "Czech eID Authority",
+        "Example Authority",
         biometric.sketch,
-        biometric.verificationKey
+        biometric.verificationKey,
       );
       setCredential(vc);
     } catch (error) {

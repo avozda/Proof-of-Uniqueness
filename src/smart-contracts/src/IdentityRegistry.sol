@@ -17,7 +17,6 @@ contract IdentityRegistry {
         uint256 issuerPubKeyY; // Signer's public key Y coordinate
         uint256 verificationKeyX;
         uint256 verificationKeyY;
-        uint256 sketchHash;
         bool exists;
     }
 
@@ -132,7 +131,7 @@ contract IdentityRegistry {
 
         // uint256 issuerField = _pubSignals[1]; // Not used directly, but part of signed data
         uint256 validUntil = _pubSignals[2];
-        uint256 sketchHash = _pubSignals[3];
+        // uint256 sketchHash = _pubSignals[3]; // Not stored on-chain
         uint256 verificationKeyX = _pubSignals[4];
         uint256 verificationKeyY = _pubSignals[5];
         uint256 signerPubKeyX = _pubSignals[6];
@@ -155,25 +154,12 @@ contract IdentityRegistry {
             issuerPubKeyY: signerPubKeyY,
             verificationKeyX: verificationKeyX,
             verificationKeyY: verificationKeyY,
-            sketchHash: sketchHash,
             exists: true
         });
 
         registeredHashIDs.push(hashID);
 
         emit IdentityEnrolled(hashID, issuerPubKeyHash, validUntil);
-    }
-
-    /**
-     * @notice Get the sketch hash for a given hashID
-     * @param hashID The identity hash ID
-     * @return sketchHash The biometric sketch hash
-     */
-    function getSketchHash(
-        uint256 hashID
-    ) external view returns (uint256 sketchHash) {
-        if (!identities[hashID].exists) revert IdentityNotFound();
-        return identities[hashID].sketchHash;
     }
 
     /**
