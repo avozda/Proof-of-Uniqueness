@@ -56,9 +56,8 @@ contract IdentityRegistryGasTest is Test {
         pubSignals[2] = block.timestamp + 1000; // validUntil
         pubSignals[3] = 999; // sketchHash
         
-        // Use address-form verification key formatting
-        pubSignals[4] = uint256(uint160(address(0x123))); // verificationKeyX
-        pubSignals[5] = 0; // verificationKeyY
+        pubSignals[4] = 12345; // holderPubKeyX
+        pubSignals[5] = 67890; // holderPubKeyY
         
         pubSignals[6] = ISSUER_X;
         pubSignals[7] = ISSUER_Y;
