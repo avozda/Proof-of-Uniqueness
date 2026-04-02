@@ -15,6 +15,12 @@ import {
   VC_FIELD_LABELS,
   type VCFields,
 } from "./did";
+import {
+  buildRevokeChallengeMessage,
+  deriveHolderPublicKeyFromBiometric,
+  signHolderMessageWithBiometric,
+  type MockBiometricData,
+} from "./biometrics";
 
 export interface CircuitInputs {
   // Domain separator
@@ -27,11 +33,30 @@ export interface CircuitInputs {
   signerPubKey: [string, string];
   signatureR8: [string, string];
   signatureS: string;
+  holderSignatureR8: [string, string];
+  holderSignatureS: string;
 }
 
 export interface ZKProof {
   proof: snarkjs.Groth16Proof;
   publicSignals: string[];
+}
+
+export interface RevocationProofInputs {
+  challengeDomain: string;
+  holderPubKey: [string, string];
+  revokeSignatureR8: [string, string];
+  revokeSignatureS: string;
+  contractAddressField: string;
+  chainId: string;
+  hashID: string;
+  challengeBlock: string;
+}
+
+export interface RevocationProof {
+  proof: snarkjs.Groth16Proof;
+  // Circuit public order: holderPubKeyX, holderPubKeyY, hashID, challengeBlock
+  publicSignals: [string, string, string, string];
 }
 
 export interface ProofOutputs {
@@ -106,6 +131,7 @@ export function extractCircuitInputs(vc: VerifiableCredential): CircuitInputs {
     proof.verificationMethod,
   );
   const signerPubKey: [string, string] = [pubKey.x, pubKey.y];
+  const holderSig = vc.credentialSubject.holderBindingSignature;
 
   return {
     domainSeparator: getDomainSeparator().toString(),
@@ -114,6 +140,8 @@ export function extractCircuitInputs(vc: VerifiableCredential): CircuitInputs {
     signerPubKey,
     signatureR8,
     signatureS,
+    holderSignatureR8: [holderSig.r8x, holderSig.r8y],
+    holderSignatureS: holderSig.s,
   };
 }
 
@@ -135,6 +163,94 @@ export async function generateProof(
   );
 
   return { proof, publicSignals };
+}
+
+function addressToField(address: `0x${string}`): bigint {
+  const clean = address.toLowerCase().replace("0x", "");
+  if (!/^[0-9a-f]{40}$/.test(clean)) {
+    throw new Error("Invalid address format");
+  }
+  return BigInt(`0x${clean}`);
+}
+
+export function buildRevocationCircuitInputs(
+  biometricData: MockBiometricData,
+  contractAddress: `0x${string}`,
+  chainId: bigint,
+  hashID: bigint,
+  challengeBlock: bigint,
+): RevocationProofInputs {
+  const holderPubKey = deriveHolderPublicKeyFromBiometric(
+    biometricData.rawBiometric,
+    biometricData.sketch,
+  );
+
+  const message = buildRevokeChallengeMessage(
+    contractAddress,
+    chainId,
+    hashID,
+    challengeBlock,
+  );
+  const signature = signHolderMessageWithBiometric(
+    biometricData.rawBiometric,
+    biometricData.sketch,
+    message,
+  );
+
+  return {
+    challengeDomain: stringToField("IdentityRegistry::Revoke:v2").toString(),
+    holderPubKey: [holderPubKey.x.toString(), holderPubKey.y.toString()],
+    revokeSignatureR8: [
+      signature.R8[0].toString(),
+      signature.R8[1].toString(),
+    ],
+    revokeSignatureS: signature.S.toString(),
+    contractAddressField: addressToField(contractAddress).toString(),
+    chainId: chainId.toString(),
+    hashID: hashID.toString(),
+    challengeBlock: challengeBlock.toString(),
+  };
+}
+
+export async function generateRevocationProof(
+  biometricData: MockBiometricData,
+  contractAddress: `0x${string}`,
+  chainId: bigint,
+  hashID: bigint,
+  challengeBlock: bigint,
+): Promise<RevocationProof> {
+  const inputs = buildRevocationCircuitInputs(
+    biometricData,
+    contractAddress,
+    chainId,
+    hashID,
+    challengeBlock,
+  );
+
+  const wasmResponse = await fetch("/circuits/IdentityRevocation.wasm");
+  const wasmBuffer = await wasmResponse.arrayBuffer();
+
+  const zkeyResponse = await fetch("/circuits/IdentityRevocation_0001.zkey");
+  const zkeyBuffer = await zkeyResponse.arrayBuffer();
+
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+    inputs as unknown as Record<string, unknown>,
+    new Uint8Array(wasmBuffer),
+    new Uint8Array(zkeyBuffer),
+  );
+
+  return {
+    proof,
+    publicSignals: publicSignals as [string, string, string, string],
+  };
+}
+
+export async function verifyRevocationProof(
+  revokeProof: RevocationProof,
+): Promise<boolean> {
+  const vkeyResponse = await fetch("/circuits/verification_key_revocation.json");
+  const vkey = await vkeyResponse.json();
+  return snarkjs.groth16.verify(vkey, revokeProof.publicSignals, revokeProof.proof);
 }
 
 export function parsePublicSignals(publicSignals: string[]): ProofOutputs {

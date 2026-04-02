@@ -9,21 +9,19 @@ import {
   usePublicClient,
 } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { generateProof, verifyProof, parsePublicSignals } from "../lib/proof";
-import type { ZKProof, ProofOutputs } from "../lib/proof";
+import {
+  generateProof,
+  verifyProof,
+  parsePublicSignals,
+  generateRevocationProof,
+  verifyRevocationProof,
+} from "../lib/proof";
+import type { ZKProof, ProofOutputs, RevocationProof } from "../lib/proof";
 import type { VerifiableCredential } from "../lib/vc";
-import type { MockBiometricData, SignatureParts } from "../lib/biometrics";
+import type { MockBiometricData } from "../lib/biometrics";
 import { identityRegistryAbi } from "../lib/contractAbi";
 import { formatIdentityRegistryTxError } from "../lib/contractErrors";
 import { CONTRACT_ADDRESSES, setContractAddress } from "../lib/wagmi";
-import {
-  buildAuthorizeChallengeDigest,
-  buildRevokeChallengeDigest,
-  generateAuthorizeChallenge,
-  signChallengeWithBiometric,
-  verifyChallengeSignature,
-} from "../lib/biometrics";
-import { bytesToHex } from "@noble/hashes/utils.js";
 
 interface ZKProofSectionProps {
   credential: VerifiableCredential;
@@ -45,25 +43,11 @@ export function ZKProofSection({
     CONTRACT_ADDRESSES.identityRegistry,
   );
   const [revokeHashIdInput, setRevokeHashIdInput] = useState("");
-  const [authorizeHashIdInput, setAuthorizeHashIdInput] = useState("");
   const [revokeError, setRevokeError] = useState<string | null>(null);
-  const [authorizeError, setAuthorizeError] = useState<string | null>(null);
-  const [authorizeResult, setAuthorizeResult] = useState<boolean | null>(null);
-  const [authorizeChallengeHex, setAuthorizeChallengeHex] = useState<string | null>(
-    null,
-  );
-  const [authorizeSignature, setAuthorizeSignature] = useState<SignatureParts | null>(
-    null,
-  );
-  const [isAuthorizing, setIsAuthorizing] = useState(false);
-  const [authorizeVkFromChain, setAuthorizeVkFromChain] = useState<
-    readonly [bigint, bigint] | null
-  >(null);
+  const [revokeProof, setRevokeProof] = useState<RevocationProof | null>(null);
+  const [revokeProofVerified, setRevokeProofVerified] = useState<boolean | null>(null);
   const publicClient = usePublicClient();
 
-  const parsedAuthorizeHashId = /^\d+$/.test(authorizeHashIdInput)
-    ? BigInt(authorizeHashIdInput)
-    : null;
   const parsedRevokeHashId = /^\d+$/.test(revokeHashIdInput)
     ? BigInt(revokeHashIdInput)
     : null;
@@ -134,6 +118,19 @@ export function ZKProofSection({
   });
 
   const {
+    data: enrollmentVerifierAddress,
+    refetch: refetchEnrollmentVerifierAddress,
+  } = useReadContract({
+    address: contractAddressValid ? contractAddress : undefined,
+    abi: identityRegistryAbi,
+    functionName: "enrollmentVerifier",
+    query: {
+      enabled: Boolean(isConnected && contractAddressValid),
+      retry: false,
+    },
+  });
+
+  const {
     writeContract: writeRevokeTx,
     data: revokeTxHash,
     isPending: isRevoking,
@@ -152,20 +149,6 @@ export function ZKProofSection({
   } = useWaitForTransactionReceipt({
     hash: revokeTxHash,
     query: { retry: false },
-  });
-
-  const {
-    refetch: refetchAuthorizeVk,
-    isFetching: isAuthorizeVkFetching,
-  } = useReadContract({
-    address: contractAddressValid ? contractAddress : undefined,
-    abi: identityRegistryAbi,
-    functionName: "getVerificationKey",
-    args: parsedAuthorizeHashId != null ? [parsedAuthorizeHashId] : undefined,
-    query: {
-      enabled: false,
-      retry: false,
-    },
   });
 
   // viem only maps status for exact "0x0"/"0x1"; some RPCs return variants so status can be
@@ -241,7 +224,6 @@ export function ZKProofSection({
       const outputs = parsePublicSignals(proof.publicSignals);
       setProofOutputs(outputs);
       setRevokeHashIdInput(outputs.hashID);
-      setAuthorizeHashIdInput(outputs.hashID);
 
       const isValid = await verifyProof(proof);
       setProofVerified(isValid);
@@ -280,57 +262,6 @@ export function ZKProofSection({
   const revokeSucceeded =
     revokeReceiptReady && revokeReceipt != null && revokeReceipt.status === "success";
 
-  const handleAuthorizeMock = async () => {
-    if (!contractAddressValid) {
-      setAuthorizeError("Enter a valid contract address.");
-      return;
-    }
-    if (!authorizeHashIdInput) {
-      setAuthorizeError("Enter a hash ID to authorize.");
-      return;
-    }
-    if (parsedAuthorizeHashId == null) {
-      setAuthorizeError("Hash ID must be a decimal uint256 value.");
-      return;
-    }
-
-    setIsAuthorizing(true);
-    setAuthorizeError(null);
-    setAuthorizeResult(null);
-    setAuthorizeChallengeHex(null);
-    setAuthorizeSignature(null);
-
-    try {
-      const hashID = parsedAuthorizeHashId;
-      const vkResult = await refetchAuthorizeVk();
-      const vk = vkResult.data;
-      if (!vk) {
-        throw new Error("Verification key not found for hash ID.");
-      }
-
-      const [vkX, vkY] = vk as readonly [bigint, bigint];
-      setAuthorizeVkFromChain([vkX, vkY]);
-      const challenge = generateAuthorizeChallenge();
-      const digest = buildAuthorizeChallengeDigest(hashID, challenge);
-      const signature = signChallengeWithBiometric(
-        biometricData.rawBiometric,
-        biometricData.sketch,
-        digest,
-      );
-      const ok = verifyChallengeSignature(vkX, vkY, digest, signature);
-
-      setAuthorizeChallengeHex(`0x${bytesToHex(challenge)}`);
-      setAuthorizeSignature(signature);
-      setAuthorizeResult(ok);
-    } catch (err) {
-      setAuthorizeError(
-        err instanceof Error ? err.message : "Authorization mock failed.",
-      );
-    } finally {
-      setIsAuthorizing(false);
-    }
-  };
-
   const handleRevokeIdentity = async () => {
     if (!contractAddressValid) {
       setRevokeError("Enter a valid contract address.");
@@ -353,28 +284,56 @@ export function ZKProofSection({
         throw new Error("Public client is not ready.");
       }
 
+      const identityRecord = (await publicClient.readContract({
+        address: contractAddress,
+        abi: identityRegistryAbi,
+        functionName: "identities",
+        args: [hashID],
+      })) as readonly [bigint, bigint, bigint, bigint, bigint, boolean];
+      if (!identityRecord?.[5]) {
+        throw new Error(
+          `No enrollment found for hashID ${hashID.toString()} on contract ${contractAddress}.`,
+        );
+      }
+
       const challengeBlock = await publicClient.getBlockNumber();
       const walletChainId = await publicClient.getChainId();
 
-      const digest = buildRevokeChallengeDigest(
+      const revokeZkProof = await generateRevocationProof(
+        biometricData,
         contractAddress,
         BigInt(walletChainId),
         hashID,
         challengeBlock,
       );
+      setRevokeProof(revokeZkProof);
 
-      const signature = signChallengeWithBiometric(
-        biometricData.rawBiometric,
-        biometricData.sketch,
-        digest,
-      );
+      const localValid = await verifyRevocationProof(revokeZkProof);
+      setRevokeProofVerified(localValid);
+      if (!localValid) {
+        throw new Error("Generated revocation proof failed local verification.");
+      }
+
+      const proof = revokeZkProof.proof;
+      const pA: [bigint, bigint] = [BigInt(proof.pi_a[0]), BigInt(proof.pi_a[1])];
+      const pB: [[bigint, bigint], [bigint, bigint]] = [
+        [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
+        [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])],
+      ];
+      const pC: [bigint, bigint] = [BigInt(proof.pi_c[0]), BigInt(proof.pi_c[1])];
+      const pubSignals: readonly [bigint, bigint, bigint, bigint] = [
+        BigInt(revokeZkProof.publicSignals[0]),
+        BigInt(revokeZkProof.publicSignals[1]),
+        BigInt(revokeZkProof.publicSignals[2]),
+        BigInt(revokeZkProof.publicSignals[3]),
+      ];
 
       resetRevokeSubmit();
       writeRevokeTx({
         address: contractAddress,
         abi: identityRegistryAbi,
-        functionName: "revokeIdentity",
-        args: [hashID, challengeBlock, signature.v, signature.r, signature.s],
+        functionName: "revokeIdentityWithProof",
+        args: [pA, pB, pC, pubSignals],
       });
     } catch (err) {
       setRevokeError(err instanceof Error ? err.message : "Revocation failed.");
@@ -402,8 +361,49 @@ export function ZKProofSection({
 
     setContractAddress(contractAddress);
 
+    if (!contractAddressValid) {
+      setProofError("Enter a valid contract address.");
+      return;
+    }
+
+    if (!publicClient) {
+      setProofError("Public client is not ready.");
+      return;
+    }
+
+    const onchainEnrollmentVerifier =
+      enrollmentVerifierAddress ?? (await refetchEnrollmentVerifierAddress()).data;
+    if (typeof onchainEnrollmentVerifier !== "string") {
+      setProofError(
+        "Connected contract does not expose enrollmentVerifier(). Redeploy the new IdentityRegistry version.",
+      );
+      return;
+    }
+
+    if (
+      onchainEnrollmentVerifier.toLowerCase() ===
+      "0x0000000000000000000000000000000000000000"
+    ) {
+      setProofError("Contract enrollment verifier is not configured.");
+      return;
+    }
+
     const proof = zkProof.proof;
     const publicSignals = zkProof.publicSignals;
+    const hashIDToEnroll = BigInt(publicSignals[0]);
+
+    const existingRecord = (await publicClient.readContract({
+      address: contractAddress,
+      abi: identityRegistryAbi,
+      functionName: "identities",
+      args: [hashIDToEnroll],
+    })) as readonly [bigint, bigint, bigint, bigint, bigint, boolean];
+    if (existingRecord?.[5]) {
+      setProofError(
+        `HashID ${hashIDToEnroll.toString()} is already enrolled on ${contractAddress}.`,
+      );
+      return;
+    }
 
     // Format proof for Solidity verifier (swap pi_b coordinate order)
     const pA: [bigint, bigint] = [BigInt(proof.pi_a[0]), BigInt(proof.pi_a[1])];
@@ -789,86 +789,20 @@ export function ZKProofSection({
                       )}
                     </div>
 
-                    <div className="authorize-block">
-                      <h5>Authorization (Mock)</h5>
-                      <p>
-                        Fetch verification key by hash ID, generate random challenge,
-                        sign with unlocked sketch key, then verify locally.
-                      </p>
-                      <div className="contract-address-input">
-                        <label htmlFor="authorizeHashId">Hash ID to authorize:</label>
-                        <input
-                          id="authorizeHashId"
-                          type="text"
-                          value={authorizeHashIdInput}
-                          onChange={(e) => setAuthorizeHashIdInput(e.target.value)}
-                          placeholder="123456..."
-                          className="address-input"
-                        />
+                    {revokeProof && (
+                      <div className="tx-info">
+                        <span className="tx-label">Revocation proof public signals:</span>
+                        <code className="tx-hash">[{revokeProof.publicSignals.join(", ")}]</code>
+                        <span className="tx-label">Local proof check:</span>
+                        <code className="tx-hash">
+                          {revokeProofVerified === true
+                            ? "valid"
+                            : revokeProofVerified === false
+                              ? "invalid"
+                              : "pending"}
+                        </code>
                       </div>
-                      <button
-                        className="submit-button authorize-button"
-                        onClick={handleAuthorizeMock}
-                        disabled={
-                          isAuthorizing ||
-                          isAuthorizeVkFetching ||
-                          parsedAuthorizeHashId == null
-                        }
-                        type="button"
-                      >
-                        {isAuthorizing || isAuthorizeVkFetching ? (
-                          <>
-                            <span className="spinner" />
-                            Authorizing...
-                          </>
-                        ) : (
-                          <>
-                            <span className="btn-icon">✅</span>
-                            Run Authorization Mock
-                          </>
-                        )}
-                      </button>
-                      {authorizeError && (
-                        <div className="tx-error" role="alert">
-                          <span className="tx-error-icon">❌</span>
-                          <span className="tx-error-text">{authorizeError}</span>
-                        </div>
-                      )}
-                      {authorizeChallengeHex && authorizeSignature && (
-                        <div className="tx-info">
-                          {authorizeVkFromChain && (
-                            <>
-                              <span className="tx-label">Verification key from contract:</span>
-                              <code className="tx-hash">
-                                x={authorizeVkFromChain[0].toString()} y={authorizeVkFromChain[1].toString()}
-                              </code>
-                            </>
-                          )}
-                          <span className="tx-label">Random challenge:</span>
-                          <code className="tx-hash">{authorizeChallengeHex}</code>
-                          <span className="tx-label">Signature (v,r,s):</span>
-                          <code className="tx-hash">
-                            v={authorizeSignature.v} r={authorizeSignature.r} s={authorizeSignature.s}
-                          </code>
-                        </div>
-                      )}
-                      {authorizeResult !== null && (
-                        <div className={authorizeResult ? "tx-success" : "tx-error"}>
-                          {authorizeResult ? (
-                            <>
-                              <span>✅</span> Authorization mock succeeded (signature verified).
-                            </>
-                          ) : (
-                            <>
-                              <span className="tx-error-icon">❌</span>
-                              <span className="tx-error-text">
-                                Authorization mock failed (signature did not verify).
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                    )}
                   </>
                 )}
               </div>

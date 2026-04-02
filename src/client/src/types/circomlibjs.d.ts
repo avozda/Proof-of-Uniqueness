@@ -20,6 +20,11 @@ declare module "circomlibjs" {
       signature: { R8: FieldElement[]; S: bigint },
       publicKey: FieldElement[]
     ) => boolean;
+    babyJub: {
+      packPoint: (point: FieldElement[]) => Uint8Array;
+      unpackPoint: (point: Uint8Array) => FieldElement[] | null;
+      inCurve: (point: FieldElement[]) => boolean;
+    };
   }
 
   export interface PoseidonInstance {

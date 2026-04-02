@@ -1,7 +1,5 @@
 import { buildEddsa, buildPoseidon } from "circomlibjs";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { keccak_256 } from "@noble/hashes/sha3.js";
 import bs58 from "bs58";
 
 let eddsa: Awaited<ReturnType<typeof buildEddsa>> | null = null;
@@ -170,6 +168,37 @@ export function generateDID(): DIDKeyPair {
     privateKey,
     verificationMethod: `${did}#key-1`,
   };
+}
+
+export function publicKeyFromPrivateKey(privateKey: Uint8Array): EdDSAPublicKey {
+  const eddsaInstance = getEddsa();
+  const publicKeyPoint = eddsaInstance.prv2pub(privateKey);
+  return {
+    x: eddsaInstance.F.toObject(publicKeyPoint[0]),
+    y: eddsaInstance.F.toObject(publicKeyPoint[1]),
+  };
+}
+
+export function unpackBabyJubPublicKey(packed: Uint8Array): EdDSAPublicKey {
+  const eddsaInstance = getEddsa();
+  const point = eddsaInstance.babyJub.unpackPoint(packed);
+  if (!point || !eddsaInstance.babyJub.inCurve(point)) {
+    throw new Error("Invalid packed BabyJubJub public key");
+  }
+
+  return {
+    x: eddsaInstance.F.toObject(point[0]),
+    y: eddsaInstance.F.toObject(point[1]),
+  };
+}
+
+export function packBabyJubPublicKey(publicKey: EdDSAPublicKey): Uint8Array {
+  const eddsaInstance = getEddsa();
+  const point = [
+    eddsaInstance.F.e(publicKey.x),
+    eddsaInstance.F.e(publicKey.y),
+  ];
+  return eddsaInstance.babyJub.packPoint(point);
 }
 
 export function signMessage(
@@ -511,9 +540,6 @@ export function hashBytes(bytes: Uint8Array): bigint {
 
 /** Split verification key bytes into two field elements */
 export function vkToFieldElements(vk: Uint8Array): [bigint, bigint] {
-  const point = secp256k1.Point.fromHex(bytesToHex(vk));
-  const uncompressed = point.toBytes(false);
-  const digest = keccak_256(uncompressed.slice(1));
-  const addressBytes = digest.slice(12);
-  return [bytesToBigint(addressBytes), 0n];
+  const unpacked = unpackBabyJubPublicKey(vk);
+  return [unpacked.x, unpacked.y];
 }

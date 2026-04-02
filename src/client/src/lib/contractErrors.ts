@@ -14,10 +14,8 @@ const REVERT_SELECTOR_MESSAGES: Record<string, string> = {
   "0x2ae1f41d": "The signed challenge block is in the future.",
   "0xaa2bf635":
     "The signed challenge is stale. Sign a fresh challenge and retry.",
-  "0xa9615b40":
-    "Revocation signature is invalid. Unlock with the correct biometric sketch.",
-  "0xc12559d9":
-    "Signature does not match the enrolled verification key for this identity.",
+  "0x587f81e7":
+    "Revocation proof key does not match the enrolled holder public key.",
 };
 
 const ERROR_NAME_MESSAGES: Record<string, string> = {
@@ -29,8 +27,7 @@ const ERROR_NAME_MESSAGES: Record<string, string> = {
   IdentityExpired: REVERT_SELECTOR_MESSAGES["0x0ce8eac5"],
   ChallengeBlockInFuture: REVERT_SELECTOR_MESSAGES["0x2ae1f41d"],
   StaleChallenge: REVERT_SELECTOR_MESSAGES["0xaa2bf635"],
-  InvalidRevocationSignature: REVERT_SELECTOR_MESSAGES["0xa9615b40"],
-  RevocationSignerMismatch: REVERT_SELECTOR_MESSAGES["0xc12559d9"],
+  RevocationKeyMismatch: REVERT_SELECTOR_MESSAGES["0x587f81e7"],
 };
 
 function isHexData(value: unknown): value is `0x${string}` {
@@ -153,14 +150,8 @@ export function formatIdentityRegistryTxError(err: Error): string {
   if (msg.includes("StaleChallenge") || msg.includes("0xaa2bf635")) {
     return ERROR_NAME_MESSAGES.StaleChallenge;
   }
-  if (
-    msg.includes("InvalidRevocationSignature") ||
-    msg.includes("0xa9615b40")
-  ) {
-    return ERROR_NAME_MESSAGES.InvalidRevocationSignature;
-  }
-  if (msg.includes("RevocationSignerMismatch") || msg.includes("0xc12559d9")) {
-    return ERROR_NAME_MESSAGES.RevocationSignerMismatch;
+  if (msg.includes("RevocationKeyMismatch") || msg.includes("0x587f81e7")) {
+    return ERROR_NAME_MESSAGES.RevocationKeyMismatch;
   }
 
   if (
@@ -203,7 +194,7 @@ export function formatIdentityRegistryTxError(err: Error): string {
             return REVERT_SELECTOR_MESSAGES[sel];
         }
       }
-      return "The transaction reverted on-chain (the RPC reported a garbled revert reason). If you enrolled twice, this identity is likely already registered.";
+      return "The transaction reverted on-chain (the RPC reported a garbled revert reason).";
     }
   }
 

@@ -16,16 +16,32 @@ contract MockVerifier {
     }
 }
 
+contract MockRevocationVerifier {
+    function verifyProof(
+        uint256[2] calldata,
+        uint256[2][2] calldata,
+        uint256[2] calldata,
+        uint256[4] calldata
+    ) external pure returns (bool) {
+        return true;
+    }
+}
+
 contract IdentityRegistryGasTest is Test {
     IdentityRegistry public registry;
     MockVerifier public verifier;
+    MockRevocationVerifier public revocationVerifier;
 
     uint256 public constant ISSUER_X = 123;
     uint256 public constant ISSUER_Y = 456;
 
     function setUp() public {
         verifier = new MockVerifier();
-        registry = new IdentityRegistry(address(verifier));
+        revocationVerifier = new MockRevocationVerifier();
+        registry = new IdentityRegistry(
+            address(verifier),
+            address(revocationVerifier)
+        );
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
     }
 
@@ -52,37 +68,26 @@ contract IdentityRegistryGasTest is Test {
     
     function testGasRevoke() public {
         testGasEnroll();
-        
-        uint256 challengeBlock = block.number;
-        
-        (address signer, uint256 pk) = makeAddrAndKey("signer");
-        
-        // Enroll an identity bounded to the real signer address so we can ecrecover
+
         uint256[2] memory pA;
         uint256[2][2] memory pB;
         uint256[2] memory pC;
         uint256[8] memory pubSignals;
-        pubSignals[0] = 888; // new hashID
+        pubSignals[0] = 888;
         pubSignals[2] = block.timestamp + 1000;
-        pubSignals[4] = uint256(uint160(signer)); // Store address in X coordinate
+        pubSignals[4] = 11;
+        pubSignals[5] = 22;
         pubSignals[6] = ISSUER_X;
         pubSignals[7] = ISSUER_Y;
         registry.enroll(pA, pB, pC, pubSignals);
-        
-        // Recreate the strict challenge digest from IdentityRegistry.sol
-        bytes32 challengeDigest = keccak256(
-            abi.encode(
-                keccak256("IdentityRegistry::Revoke:v1"),
-                address(registry),
-                block.chainid,
-                uint256(888),
-                challengeBlock
-            )
-        );
-        
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(pk, challengeDigest);
-        
-        registry.revokeIdentity(888, challengeBlock, v, r, s);
+
+        uint256[4] memory revokeSignals;
+        revokeSignals[0] = 11;
+        revokeSignals[1] = 22;
+        revokeSignals[2] = 888;
+        revokeSignals[3] = block.number;
+
+        registry.revokeIdentityWithProof(pA, pB, pC, revokeSignals);
     }
 
     function testGasPurge() public {

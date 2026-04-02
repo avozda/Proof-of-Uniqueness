@@ -73,6 +73,10 @@ template IdentityEnrollment(numFields, treeDepth) {
     signal input signerPubKey[2];
     signal input signatureR8[2];
     signal input signatureS;
+
+    // Holder EdDSA signature over credentialSubjectId binding
+    signal input holderSignatureR8[2];
+    signal input holderSignatureS;
     
     // Public outputs
     signal output hashID;
@@ -81,6 +85,8 @@ template IdentityEnrollment(numFields, treeDepth) {
     signal output outSketchHash;
     signal output outVerificationKey[2];
     signal output outSignerPubKey[2];
+
+    var holderDomainSeparator = 167820972663910113509713736073221657714819440573153347582457393; // "holder-bjj-bind-subject:v1"
     
     // Field label constants (precomputed from stringToFieldSimple() in did.ts); order = VC_FIELD_LABELS
     var fieldLabels[numFields];
@@ -128,10 +134,29 @@ template IdentityEnrollment(numFields, treeDepth) {
     sigVerifier.R8y <== signatureR8[1];
     sigVerifier.S <== signatureS;
     sigVerifier.M <== computedMessage;
-    
+
+    // Step 4b: Verify holder signature over subject binding message
+    component holderMessageHasher = Poseidon(2);
+    holderMessageHasher.inputs[0] <== holderDomainSeparator;
+    holderMessageHasher.inputs[1] <== fieldValues[2]; // credentialSubjectId
+
+    component holderSigVerifier = EdDSAPoseidonVerifier();
+    holderSigVerifier.enabled <== 1;
+    holderSigVerifier.Ax <== fieldValues[0]; // holder key x
+    holderSigVerifier.Ay <== fieldValues[1]; // holder key y
+    holderSigVerifier.R8x <== holderSignatureR8[0];
+    holderSigVerifier.R8y <== holderSignatureR8[1];
+    holderSigVerifier.S <== holderSignatureS;
+    holderSigVerifier.M <== holderMessageHasher.out;
+
     // Step 5: Compute HashID from identity fields
-    // Using: vcId, credentialSubjectId, name, dob, placeOfBirth, sex, nationality, permanentAddressHash, validFrom
-    component hashComputer = Poseidon(9);
+    // Include holder signature commitment so leaked VC fields alone cannot derive hashID.
+    component holderSigCommitment = Poseidon(3);
+    holderSigCommitment.inputs[0] <== holderSignatureR8[0];
+    holderSigCommitment.inputs[1] <== holderSignatureR8[1];
+    holderSigCommitment.inputs[2] <== holderSignatureS;
+
+    component hashComputer = Poseidon(10);
     hashComputer.inputs[0] <== fieldValues[13]; // vcId
     hashComputer.inputs[1] <== fieldValues[2];  // credentialSubjectId
     hashComputer.inputs[2] <== fieldValues[5];  // name
@@ -141,6 +166,7 @@ template IdentityEnrollment(numFields, treeDepth) {
     hashComputer.inputs[6] <== fieldValues[6];  // nationality
     hashComputer.inputs[7] <== fieldValues[7];  // permanentAddressHash
     hashComputer.inputs[8] <== fieldValues[11]; // validFrom
+    hashComputer.inputs[9] <== holderSigCommitment.out;
     
     hashID <== hashComputer.out;
     

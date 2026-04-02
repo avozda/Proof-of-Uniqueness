@@ -1,9 +1,14 @@
 import { useState, useEffect } from "react";
-import { generateDID, toHex, initCrypto } from "./lib/did";
+import { generateDID, toHex, initCrypto, publicKeyFromPrivateKey } from "./lib/did";
 import type { DIDKeyPair } from "./lib/did";
 import { createVerifiableCredential } from "./lib/vc";
+import { generatePersonId } from "./lib/vc";
 import type { VerifiableCredential, FormData } from "./lib/vc";
 import { enrollBiometric } from "./lib/biometrics";
+import {
+  buildHolderBindingMessage,
+  signHolderMessageWithBiometric,
+} from "./lib/biometrics";
 import type { MockBiometricData } from "./lib/biometrics";
 import {
   LoadingScreen,
@@ -38,7 +43,7 @@ function loadDIDFromStorage(): DIDKeyPair | null {
     const stored = localStorage.getItem(DID_STORAGE_KEY);
     if (stored) {
       const parsed: StoredDID = JSON.parse(stored);
-      return {
+      const loaded: DIDKeyPair = {
         did: parsed.did,
         publicKey: {
           x: BigInt(parsed.publicKeyX),
@@ -47,6 +52,20 @@ function loadDIDFromStorage(): DIDKeyPair | null {
         privateKey: hexToBytes(parsed.privateKey),
         verificationMethod: parsed.verificationMethod,
       };
+
+      const derivedPub = publicKeyFromPrivateKey(loaded.privateKey);
+      if (
+        derivedPub.x !== loaded.publicKey.x ||
+        derivedPub.y !== loaded.publicKey.y
+      ) {
+        console.warn(
+          "Stored issuer DID keypair is inconsistent with private key; regenerating.",
+        );
+        localStorage.removeItem(DID_STORAGE_KEY);
+        return null;
+      }
+
+      return loaded;
     }
   } catch (e) {
     console.error("Failed to load DID from storage:", e);
@@ -127,14 +146,30 @@ function App() {
 
     try {
       const biometric = enrollBiometric();
-      setBiometricData(biometric);
+      const resolvedBiometric = await biometric;
+
+      const subjectId = generatePersonId();
+      const holderBindingMessage = buildHolderBindingMessage(subjectId);
+      const holderBindingSignature = signHolderMessageWithBiometric(
+        resolvedBiometric.rawBiometric,
+        resolvedBiometric.sketch,
+        holderBindingMessage,
+      );
+
+      setBiometricData(resolvedBiometric);
 
       const vc = createVerifiableCredential(
         formData,
         issuerDID,
         "Example Authority",
-        biometric.sketch,
-        biometric.verificationKey,
+        resolvedBiometric.sketch,
+        resolvedBiometric.verificationKey,
+        {
+          r8x: holderBindingSignature.R8[0],
+          r8y: holderBindingSignature.R8[1],
+          s: holderBindingSignature.S,
+        },
+        subjectId,
       );
       setCredential(vc);
     } catch (error) {

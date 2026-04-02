@@ -19,7 +19,9 @@
     /* Path aliases */
     "baseUrl": ".",
     "paths": {
-      "ecdsa-fuzzy-signature": ["../ecdsa-fuzzy-signature/dist/index.d.ts"]
+      "eddsa-fuzzy-signature/fuzzy": ["../EdDSA-fuzzy-signature/dist/fuzzy.d.ts"],
+      "eddsa-fuzzy-signature/types": ["../EdDSA-fuzzy-signature/dist/types.d.ts"],
+      "eddsa-fuzzy-signature": ["../EdDSA-fuzzy-signature/dist/index.d.ts"]
     },
 
     /* Linting */

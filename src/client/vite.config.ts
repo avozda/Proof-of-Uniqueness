@@ -23,9 +23,17 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      "ecdsa-fuzzy-signature": path.resolve(
+      "eddsa-fuzzy-signature/fuzzy": path.resolve(
         __dirname,
-        "../ecdsa-fuzzy-signature/dist",
+        "../EdDSA-fuzzy-signature/dist/fuzzy.js",
+      ),
+      "eddsa-fuzzy-signature/types": path.resolve(
+        __dirname,
+        "../EdDSA-fuzzy-signature/dist/types.js",
+      ),
+      "eddsa-fuzzy-signature": path.resolve(
+        __dirname,
+        "../EdDSA-fuzzy-signature/dist",
       ),
     },
   },

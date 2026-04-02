@@ -4,7 +4,7 @@ async function runBenchmark() {
     console.log("Benchmarking Biometric Fuzzy Extractor Operations...");
     try {
         // Import local compiled fuzzy signature package
-        const fuzzyExtractor = await import("../../ecdsa-fuzzy-signature/dist/index.js");
+        const fuzzyExtractor = await import("../../EdDSA-fuzzy-signature/dist/index.js");
         const BIOMETRIC_LENGTH = 32;
         
         // Helper to simulate raw biometric sensor array

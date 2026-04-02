@@ -16,16 +16,32 @@ contract MockVerifier {
     }
 }
 
+contract MockRevocationVerifier {
+    function verifyProof(
+        uint256[2] calldata,
+        uint256[2][2] calldata,
+        uint256[2] calldata,
+        uint256[4] calldata
+    ) external pure returns (bool) {
+        return true;
+    }
+}
+
 contract IdentityRegistryScalingTest is Test {
     IdentityRegistry public registry;
     MockVerifier public verifier;
+    MockRevocationVerifier public revocationVerifier;
 
     uint256 public constant ISSUER_X = 123;
     uint256 public constant ISSUER_Y = 456;
 
     function setUp() public {
         verifier = new MockVerifier();
-        registry = new IdentityRegistry(address(verifier));
+        revocationVerifier = new MockRevocationVerifier();
+        registry = new IdentityRegistry(
+            address(verifier),
+            address(revocationVerifier)
+        );
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
     }
 
@@ -37,9 +53,9 @@ contract IdentityRegistryScalingTest is Test {
         
         pubSignals[1] = 0; // issuer field
         pubSignals[2] = block.timestamp + 1000; // validUntil
-        pubSignals[3] = 999; // sketchHash
-        pubSignals[4] = uint256(uint160(address(0x123))); // verificationKeyX
-        pubSignals[5] = 0; // verificationKeyY
+        pubSignals[3] = 999;
+        pubSignals[4] = 1234;
+        pubSignals[5] = 4321;
         pubSignals[6] = ISSUER_X;
         pubSignals[7] = ISSUER_Y;
 

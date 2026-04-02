@@ -4,9 +4,11 @@ pragma solidity ^0.8.13;
 import {Script, console} from "forge-std/Script.sol";
 import {IdentityRegistry} from "../src/IdentityRegistry.sol";
 import {Groth16Verifier} from "../src/Groth16Verifier.sol";
+import {Groth16RevocationVerifier} from "../src/Groth16RevocationVerifier.sol";
 
 contract IdentityRegistryScript is Script {
     Groth16Verifier public verifier;
+    Groth16RevocationVerifier public revocationVerifier;
     IdentityRegistry public identityRegistry;
 
     // Default trusted issuer public key (replace with actual issuer keys in production)
@@ -25,8 +27,17 @@ contract IdentityRegistryScript is Script {
         verifier = new Groth16Verifier();
         console.log("Groth16Verifier deployed at:", address(verifier));
 
+        revocationVerifier = new Groth16RevocationVerifier();
+        console.log(
+            "Groth16RevocationVerifier deployed at:",
+            address(revocationVerifier)
+        );
+
         // Deploy IdentityRegistry with the verifier address
-        identityRegistry = new IdentityRegistry(address(verifier));
+        identityRegistry = new IdentityRegistry(
+            address(verifier),
+            address(revocationVerifier)
+        );
         console.log(
             "IdentityRegistry deployed at:",
             address(identityRegistry)

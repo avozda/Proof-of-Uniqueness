@@ -1,7 +1,10 @@
 export const identityRegistryAbi = [
   {
     type: "constructor",
-    inputs: [{ name: "_verifier", type: "address", internalType: "address" }],
+    inputs: [
+      { name: "_enrollmentVerifier", type: "address", internalType: "address" },
+      { name: "_revocationVerifier", type: "address", internalType: "address" },
+    ],
     stateMutability: "nonpayable",
   },
   {
@@ -35,6 +38,18 @@ export const identityRegistryAbi = [
   },
   {
     type: "function",
+    name: "revokeIdentityWithProof",
+    inputs: [
+      { name: "_pA", type: "uint256[2]", internalType: "uint256[2]" },
+      { name: "_pB", type: "uint256[2][2]", internalType: "uint256[2][2]" },
+      { name: "_pC", type: "uint256[2]", internalType: "uint256[2]" },
+      { name: "_pubSignals", type: "uint256[4]", internalType: "uint256[4]" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "getIdentity",
     inputs: [{ name: "hashID", type: "uint256", internalType: "uint256" }],
     outputs: [
@@ -46,17 +61,8 @@ export const identityRegistryAbi = [
           { name: "validUntil", type: "uint256", internalType: "uint256" },
           { name: "issuerPubKeyX", type: "uint256", internalType: "uint256" },
           { name: "issuerPubKeyY", type: "uint256", internalType: "uint256" },
-          {
-            name: "verificationKeyX",
-            type: "uint256",
-            internalType: "uint256",
-          },
-          {
-            name: "verificationKeyY",
-            type: "uint256",
-            internalType: "uint256",
-          },
-          { name: "sketchHash", type: "uint256", internalType: "uint256" },
+          { name: "holderPubKeyX", type: "uint256", internalType: "uint256" },
+          { name: "holderPubKeyY", type: "uint256", internalType: "uint256" },
           { name: "exists", type: "bool", internalType: "bool" },
         ],
       },
@@ -68,13 +74,6 @@ export const identityRegistryAbi = [
     name: "getIdentityCount",
     inputs: [],
     outputs: [{ name: "count", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "getSketchHash",
-    inputs: [{ name: "hashID", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "sketchHash", type: "uint256", internalType: "uint256" }],
     stateMutability: "view",
   },
   {
@@ -95,9 +94,8 @@ export const identityRegistryAbi = [
       { name: "validUntil", type: "uint256", internalType: "uint256" },
       { name: "issuerPubKeyX", type: "uint256", internalType: "uint256" },
       { name: "issuerPubKeyY", type: "uint256", internalType: "uint256" },
-      { name: "verificationKeyX", type: "uint256", internalType: "uint256" },
-      { name: "verificationKeyY", type: "uint256", internalType: "uint256" },
-      { name: "sketchHash", type: "uint256", internalType: "uint256" },
+      { name: "holderPubKeyX", type: "uint256", internalType: "uint256" },
+      { name: "holderPubKeyY", type: "uint256", internalType: "uint256" },
       { name: "exists", type: "bool", internalType: "bool" },
     ],
     stateMutability: "view",
@@ -121,49 +119,23 @@ export const identityRegistryAbi = [
   },
   {
     type: "function",
-    name: "owners",
-    inputs: [{ name: "", type: "address", internalType: "address" }],
-    outputs: [{ name: "", type: "bool", internalType: "bool" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "registeredHashIDs",
-    inputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    name: "MAX_REVOKE_BLOCK_AGE",
+    inputs: [],
     outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
     stateMutability: "view",
   },
   {
     type: "function",
-    name: "removeOwner",
-    inputs: [{ name: "owner", type: "address", internalType: "address" }],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-  {
-    type: "function",
-    name: "removeTrustedIssuer",
-    inputs: [
-      { name: "pubKeyX", type: "uint256", internalType: "uint256" },
-      { name: "pubKeyY", type: "uint256", internalType: "uint256" },
-    ],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-  {
-    type: "function",
-    name: "trustedIssuers",
-    inputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    outputs: [{ name: "", type: "bool", internalType: "bool" }],
+    name: "enrollmentVerifier",
+    inputs: [],
+    outputs: [{ name: "", type: "address", internalType: "address" }],
     stateMutability: "view",
   },
   {
     type: "function",
-    name: "verifier",
+    name: "revocationVerifier",
     inputs: [],
-    outputs: [
-      { name: "", type: "address", internalType: "contract Groth16Verifier" },
-    ],
+    outputs: [{ name: "", type: "address", internalType: "address" }],
     stateMutability: "view",
   },
   {
@@ -177,129 +149,9 @@ export const identityRegistryAbi = [
         indexed: true,
         internalType: "uint256",
       },
-      {
-        name: "validUntil",
-        type: "uint256",
-        indexed: false,
-        internalType: "uint256",
-      },
+      { name: "validUntil", type: "uint256", indexed: false, internalType: "uint256" },
     ],
     anonymous: false,
-  },
-  {
-    type: "event",
-    name: "IssuerAdded",
-    inputs: [
-      {
-        name: "issuerPubKeyHash",
-        type: "uint256",
-        indexed: true,
-        internalType: "uint256",
-      },
-    ],
-    anonymous: false,
-  },
-  {
-    type: "event",
-    name: "IssuerRemoved",
-    inputs: [
-      {
-        name: "issuerPubKeyHash",
-        type: "uint256",
-        indexed: true,
-        internalType: "uint256",
-      },
-    ],
-    anonymous: false,
-  },
-  {
-    type: "event",
-    name: "OwnerAdded",
-    inputs: [
-      { name: "owner", type: "address", indexed: true, internalType: "address" },
-    ],
-    anonymous: false,
-  },
-  {
-    type: "event",
-    name: "OwnerRemoved",
-    inputs: [
-      { name: "owner", type: "address", indexed: true, internalType: "address" },
-    ],
-    anonymous: false,
-  },
-  { type: "error", name: "IdentityAlreadyExists", inputs: [] },
-  { type: "error", name: "IdentityExpired", inputs: [] },
-  { type: "error", name: "IdentityNotFound", inputs: [] },
-  { type: "error", name: "InvalidProof", inputs: [] },
-  { type: "error", name: "IssuerNotTrusted", inputs: [] },
-  { type: "error", name: "NotOwner", inputs: [] },
-  {
-    type: "function",
-    name: "countInvalidRecords",
-    inputs: [],
-    outputs: [
-      { name: "expiredCount", type: "uint256", internalType: "uint256" },
-      { name: "untrustedCount", type: "uint256", internalType: "uint256" },
-    ],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "purgeIdentity",
-    inputs: [{ name: "hashID", type: "uint256", internalType: "uint256" }],
-    outputs: [],
-    stateMutability: "nonpayable",
-  },
-  {
-    type: "function",
-    name: "purgeInvalidRecords",
-    inputs: [
-      { name: "maxIterations", type: "uint256", internalType: "uint256" },
-    ],
-    outputs: [
-      { name: "purgedCount", type: "uint256", internalType: "uint256" },
-      { name: "remainingCount", type: "uint256", internalType: "uint256" },
-    ],
-    stateMutability: "nonpayable",
-  },
-  {
-    type: "event",
-    name: "IdentityPurged",
-    inputs: [
-      { name: "hashID", type: "uint256", indexed: true, internalType: "uint256" },
-      {
-        name: "reason",
-        type: "uint8",
-        indexed: false,
-        internalType: "enum IdentityRegistry.PurgeReason",
-      },
-    ],
-    anonymous: false,
-  },
-  {
-    type: "function",
-    name: "MAX_REVOKE_BLOCK_AGE",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
-    stateMutability: "view",
-  },
-  {
-    type: "function",
-    name: "revokeIdentity",
-    inputs: [
-      { name: "hashID", type: "uint256", internalType: "uint256" },
-      {
-        name: "challengeBlock",
-        type: "uint256",
-        internalType: "uint256",
-      },
-      { name: "v", type: "uint8", internalType: "uint8" },
-      { name: "r", type: "bytes32", internalType: "bytes32" },
-      { name: "s", type: "bytes32", internalType: "bytes32" },
-    ],
-    outputs: [],
-    stateMutability: "nonpayable",
   },
   {
     type: "event",
@@ -307,12 +159,6 @@ export const identityRegistryAbi = [
     inputs: [
       { name: "hashID", type: "uint256", indexed: true, internalType: "uint256" },
       {
-        name: "signer",
-        type: "address",
-        indexed: true,
-        internalType: "address",
-      },
-      {
         name: "challengeBlock",
         type: "uint256",
         indexed: false,
@@ -321,8 +167,12 @@ export const identityRegistryAbi = [
     ],
     anonymous: false,
   },
+  { type: "error", name: "IdentityAlreadyExists", inputs: [] },
+  { type: "error", name: "IdentityNotFound", inputs: [] },
+  { type: "error", name: "InvalidProof", inputs: [] },
+  { type: "error", name: "IssuerNotTrusted", inputs: [] },
+  { type: "error", name: "NotOwner", inputs: [] },
   { type: "error", name: "ChallengeBlockInFuture", inputs: [] },
   { type: "error", name: "StaleChallenge", inputs: [] },
-  { type: "error", name: "InvalidRevocationSignature", inputs: [] },
-  { type: "error", name: "RevocationSignerMismatch", inputs: [] },
+  { type: "error", name: "RevocationKeyMismatch", inputs: [] },
 ] as const;
