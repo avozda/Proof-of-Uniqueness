@@ -21,12 +21,4 @@ npm run build
 - Contract address config: `src/lib/wagmi.ts`
 - ZK flow UI: `src/components/ZKProofSection.tsx`
 
-## Prerequisite
-
-Build the local fuzzy package first:
-
-```bash
-cd ../EdDSA-fuzzy-signature
-npm install
-npm run build
-```
+No extra package build step is required.

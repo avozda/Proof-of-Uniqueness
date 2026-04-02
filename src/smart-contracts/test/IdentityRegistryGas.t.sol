@@ -10,7 +10,7 @@ contract MockVerifier {
         uint256[2] calldata,
         uint256[2][2] calldata,
         uint256[2] calldata,
-        uint256[8] calldata
+        uint256[7] calldata
     ) external pure returns (bool) {
         return true;
     }
@@ -49,18 +49,15 @@ contract IdentityRegistryGasTest is Test {
         uint256[2] memory pA;
         uint256[2][2] memory pB;
         uint256[2] memory pC;
-        uint256[8] memory pubSignals;
+        uint256[7] memory pubSignals;
         
         pubSignals[0] = 777; // hashID
         pubSignals[1] = 0; // issuer field
         pubSignals[2] = block.timestamp + 1000; // validUntil
-        pubSignals[3] = 999; // sketchHash
-        
-        pubSignals[4] = 12345; // holderPubKeyX
-        pubSignals[5] = 67890; // holderPubKeyY
-        
-        pubSignals[6] = ISSUER_X;
-        pubSignals[7] = ISSUER_Y;
+        pubSignals[3] = 12345; // holderPubKeyX
+        pubSignals[4] = 67890; // holderPubKeyY
+        pubSignals[5] = ISSUER_X;
+        pubSignals[6] = ISSUER_Y;
 
         registry.enroll(pA, pB, pC, pubSignals);
     }
@@ -71,13 +68,13 @@ contract IdentityRegistryGasTest is Test {
         uint256[2] memory pA;
         uint256[2][2] memory pB;
         uint256[2] memory pC;
-        uint256[8] memory pubSignals;
+        uint256[7] memory pubSignals;
         pubSignals[0] = 888;
         pubSignals[2] = block.timestamp + 1000;
-        pubSignals[4] = 11;
-        pubSignals[5] = 22;
-        pubSignals[6] = ISSUER_X;
-        pubSignals[7] = ISSUER_Y;
+        pubSignals[3] = 11;
+        pubSignals[4] = 22;
+        pubSignals[5] = ISSUER_X;
+        pubSignals[6] = ISSUER_Y;
         registry.enroll(pA, pB, pC, pubSignals);
 
         uint256[4] memory revokeSignals;

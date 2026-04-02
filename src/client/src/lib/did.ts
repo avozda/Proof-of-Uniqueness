@@ -259,8 +259,8 @@ export const SIGNATURE_DOMAIN = "eddsa-bjj-poseidon-2024:v1";
 
 // Field labels for Merkle tree (alphabetically sorted for determinism)
 export const VC_FIELD_LABELS = [
-  "biometricVk.0",
-  "biometricVk.1",
+  "holderPubKey.0",
+  "holderPubKey.1",
   "credentialSubjectId",
   "dob",
   "issuer",
@@ -269,7 +269,6 @@ export const VC_FIELD_LABELS = [
   "permanentAddressHash",
   "placeOfBirth",
   "sex",
-  "sketchHash",
   "validFrom",
   "validUntil",
   "vcId",
@@ -447,15 +446,14 @@ export interface VCFields {
   validFrom: bigint;
   issuer: bigint;
   validUntil: bigint;
-  sketchHash: bigint;
-  verificationKey: [bigint, bigint];
+  holderPublicKey: [bigint, bigint];
 }
 
 /** Build labeled field map from VC fields (sorted alphabetically by label) */
 export function buildFieldMap(vcFields: VCFields): Map<VCFieldLabel, bigint> {
   const fieldMap = new Map<VCFieldLabel, bigint>();
-  fieldMap.set("biometricVk.0", vcFields.verificationKey[0]);
-  fieldMap.set("biometricVk.1", vcFields.verificationKey[1]);
+  fieldMap.set("holderPubKey.0", vcFields.holderPublicKey[0]);
+  fieldMap.set("holderPubKey.1", vcFields.holderPublicKey[1]);
   fieldMap.set("credentialSubjectId", vcFields.credentialSubjectId);
   fieldMap.set("dob", vcFields.dob);
   fieldMap.set("issuer", vcFields.issuer);
@@ -464,7 +462,6 @@ export function buildFieldMap(vcFields: VCFields): Map<VCFieldLabel, bigint> {
   fieldMap.set("permanentAddressHash", vcFields.permanentAddressHash);
   fieldMap.set("placeOfBirth", vcFields.placeOfBirth);
   fieldMap.set("sex", vcFields.sex);
-  fieldMap.set("sketchHash", vcFields.sketchHash);
   fieldMap.set("validFrom", vcFields.validFrom);
   fieldMap.set("validUntil", vcFields.validUntil);
   fieldMap.set("vcId", vcFields.vcId);

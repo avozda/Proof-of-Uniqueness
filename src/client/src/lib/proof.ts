@@ -4,9 +4,6 @@ import {
   stringToField,
   dateToField,
   sexToField,
-  hashBytes,
-  vkToFieldElements,
-  fromHex,
   decodeProofValue,
   extractPublicKeyFromVerificationMethod,
   computeFieldLeaf,
@@ -17,15 +14,14 @@ import {
 } from "./did";
 import {
   buildRevokeChallengeMessage,
-  deriveHolderPublicKeyFromBiometric,
-  signHolderMessageWithBiometric,
-  type MockBiometricData,
-} from "./biometrics";
+  signMessageWithHolderKey,
+  type HolderKeyPair,
+} from "./holderKey";
 
 export interface CircuitInputs {
   // Domain separator
   domainSeparator: string;
-  // Merkle tree structure (4 levels for 12 fields padded to 16)
+  // Merkle tree structure (4 levels for 13 fields padded to 16)
   merkleLeaves: string[];
   // Field values (needed to verify leaf computation in circuit)
   fieldValues: string[];
@@ -63,8 +59,7 @@ export interface ProofOutputs {
   hashID: string;
   outIssuer: string;
   outValidUntil: string;
-  outSketchHash: string;
-  outVerificationKey: [string, string];
+  outHolderPubKey: [string, string];
   outSignerPubKey: [string, string];
 }
 
@@ -72,9 +67,10 @@ export interface ProofOutputs {
 function extractFieldValues(vc: VerifiableCredential): VCFields {
   const subject = vc.credentialSubject;
 
-  const sketchBytes = fromHex(subject.biometricTemplate.template);
-  const vkBytes = fromHex(subject.biometricVerificationKey.value);
-  const vkFields = vkToFieldElements(vkBytes);
+  const holderPubKey: [bigint, bigint] = [
+    BigInt(subject.holderPublicKey.x),
+    BigInt(subject.holderPublicKey.y),
+  ];
 
   return {
     vcId: stringToField(vc.id),
@@ -88,8 +84,7 @@ function extractFieldValues(vc: VerifiableCredential): VCFields {
     validFrom: dateToField(vc.validFrom),
     validUntil: dateToField(vc.validUntil),
     issuer: stringToField(vc.issuer.id),
-    sketchHash: hashBytes(sketchBytes),
-    verificationKey: vkFields,
+    holderPublicKey: holderPubKey,
   };
 }
 
@@ -102,8 +97,8 @@ export function extractCircuitInputs(vc: VerifiableCredential): CircuitInputs {
 
   // Build field values array matching VC_FIELD_LABELS order
   const fieldValuesOrdered: bigint[] = [
-    fields.verificationKey[0], // biometricVk.0
-    fields.verificationKey[1], // biometricVk.1
+    fields.holderPublicKey[0], // holderPubKey.0
+    fields.holderPublicKey[1], // holderPubKey.1
     fields.credentialSubjectId, // credentialSubjectId
     fields.dob, // dob
     fields.issuer, // issuer
@@ -112,7 +107,6 @@ export function extractCircuitInputs(vc: VerifiableCredential): CircuitInputs {
     fields.permanentAddressHash, // permanentAddressHash
     fields.placeOfBirth, // placeOfBirth
     fields.sex, // sex
-    fields.sketchHash, // sketchHash
     fields.validFrom, // validFrom
     fields.validUntil, // validUntil
     fields.vcId, // vcId
@@ -174,16 +168,13 @@ function addressToField(address: `0x${string}`): bigint {
 }
 
 export function buildRevocationCircuitInputs(
-  biometricData: MockBiometricData,
+  holderKeyPair: HolderKeyPair,
   contractAddress: `0x${string}`,
   chainId: bigint,
   hashID: bigint,
   challengeBlock: bigint,
 ): RevocationProofInputs {
-  const holderPubKey = deriveHolderPublicKeyFromBiometric(
-    biometricData.rawBiometric,
-    biometricData.sketch,
-  );
+  const holderPubKey = holderKeyPair.publicKey;
 
   const message = buildRevokeChallengeMessage(
     contractAddress,
@@ -191,11 +182,7 @@ export function buildRevocationCircuitInputs(
     hashID,
     challengeBlock,
   );
-  const signature = signHolderMessageWithBiometric(
-    biometricData.rawBiometric,
-    biometricData.sketch,
-    message,
-  );
+  const signature = signMessageWithHolderKey(holderKeyPair.privateKey, message);
 
   return {
     challengeDomain: stringToField("IdentityRegistry::Revoke:v2").toString(),
@@ -213,14 +200,14 @@ export function buildRevocationCircuitInputs(
 }
 
 export async function generateRevocationProof(
-  biometricData: MockBiometricData,
+  holderKeyPair: HolderKeyPair,
   contractAddress: `0x${string}`,
   chainId: bigint,
   hashID: bigint,
   challengeBlock: bigint,
 ): Promise<RevocationProof> {
   const inputs = buildRevocationCircuitInputs(
-    biometricData,
+    holderKeyPair,
     contractAddress,
     chainId,
     hashID,
@@ -258,9 +245,8 @@ export function parsePublicSignals(publicSignals: string[]): ProofOutputs {
     hashID: publicSignals[0],
     outIssuer: publicSignals[1],
     outValidUntil: publicSignals[2],
-    outSketchHash: publicSignals[3],
-    outVerificationKey: [publicSignals[4], publicSignals[5]],
-    outSignerPubKey: [publicSignals[6], publicSignals[7]],
+    outHolderPubKey: [publicSignals[3], publicSignals[4]],
+    outSignerPubKey: [publicSignals[5], publicSignals[6]],
   };
 }
 

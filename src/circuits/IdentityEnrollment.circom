@@ -66,7 +66,7 @@ template IdentityEnrollment(numFields, treeDepth) {
     signal input merkleLeaves[numLeaves];
     
     // Raw field values for computing hashID and public outputs
-    // Order matches VC_FIELD_LABELS: biometricVk.0, biometricVk.1, credentialSubjectId, dob, issuer, name, nationality, permanentAddressHash, placeOfBirth, sex, sketchHash, validFrom, validUntil, vcId
+    // Order matches VC_FIELD_LABELS: holderPubKey.0, holderPubKey.1, credentialSubjectId, dob, issuer, name, nationality, permanentAddressHash, placeOfBirth, sex, validFrom, validUntil, vcId
     signal input fieldValues[numFields];
 
     // EdDSA signature
@@ -82,16 +82,15 @@ template IdentityEnrollment(numFields, treeDepth) {
     signal output hashID;
     signal output outIssuer;
     signal output outValidUntil;
-    signal output outSketchHash;
-    signal output outVerificationKey[2];
+    signal output outHolderPubKey[2];
     signal output outSignerPubKey[2];
 
     var holderDomainSeparator = 167820972663910113509713736073221657714819440573153347582457393; // "holder-bjj-bind-subject:v1"
     
     // Field label constants (precomputed from stringToFieldSimple() in did.ts); order = VC_FIELD_LABELS
     var fieldLabels[numFields];
-    fieldLabels[0] = 7796990559804582209388911734320;       // biometricVk.0
-    fieldLabels[1] = 7796990559804582209388911734321;       // biometricVk.1
+    fieldLabels[0] = 2118198470571567473536145588563504;     // holderPubKey.0
+    fieldLabels[1] = 2118198470571567473536145588563505;     // holderPubKey.1
     fieldLabels[2] = 2217739077219273223255122644505107646662330724; // credentialSubjectId
     fieldLabels[3] = 6582114;                               // dob
     fieldLabels[4] = 115944579229042;                       // issuer
@@ -100,10 +99,9 @@ template IdentityEnrollment(numFields, treeDepth) {
     fieldLabels[7] = 641669309618204160221840285997001192639266124648; // permanentAddressHash
     fieldLabels[8] = 34793344991585695257288930408;         // placeOfBirth
     fieldLabels[9] = 7562616;                               // sex
-    fieldLabels[10] = 545053257723290792850280;             // sketchHash
-    fieldLabels[11] = 2183735902496290402157;               // validFrom
-    fieldLabels[12] = 559036391039114700679532;             // validUntil
-    fieldLabels[13] = 1986218340;                           // vcId
+    fieldLabels[10] = 2183735902496290402157;               // validFrom
+    fieldLabels[11] = 559036391039114700679532;             // validUntil
+    fieldLabels[12] = 1986218340;                           // vcId
 
     // Step 1: each leaf must equal SMTHash2(label, fieldValues[i])
     component leafVerifiers[numFields];
@@ -157,7 +155,7 @@ template IdentityEnrollment(numFields, treeDepth) {
     holderSigCommitment.inputs[2] <== holderSignatureS;
 
     component hashComputer = Poseidon(10);
-    hashComputer.inputs[0] <== fieldValues[13]; // vcId
+    hashComputer.inputs[0] <== fieldValues[12]; // vcId
     hashComputer.inputs[1] <== fieldValues[2];  // credentialSubjectId
     hashComputer.inputs[2] <== fieldValues[5];  // name
     hashComputer.inputs[3] <== fieldValues[3];  // dob
@@ -165,21 +163,20 @@ template IdentityEnrollment(numFields, treeDepth) {
     hashComputer.inputs[5] <== fieldValues[9];  // sex
     hashComputer.inputs[6] <== fieldValues[6];  // nationality
     hashComputer.inputs[7] <== fieldValues[7];  // permanentAddressHash
-    hashComputer.inputs[8] <== fieldValues[11]; // validFrom
+    hashComputer.inputs[8] <== fieldValues[10]; // validFrom
     hashComputer.inputs[9] <== holderSigCommitment.out;
     
     hashID <== hashComputer.out;
     
     // Step 6: Assign public outputs
     outIssuer <== fieldValues[4];              // issuer
-    outValidUntil <== fieldValues[12];         // validUntil
-    outSketchHash <== fieldValues[10];         // sketchHash
-    outVerificationKey[0] <== fieldValues[0];  // biometricVk.0
-    outVerificationKey[1] <== fieldValues[1];  // biometricVk.1
+    outValidUntil <== fieldValues[11];         // validUntil
+    outHolderPubKey[0] <== fieldValues[0];     // holderPubKey.0
+    outHolderPubKey[1] <== fieldValues[1];     // holderPubKey.1
     outSignerPubKey[0] <== signerPubKey[0];
     outSignerPubKey[1] <== signerPubKey[1];
 }
 
 
-// 14 VC fields; Merkle tree depth 4 => 16 leaves (pad unused with 0)
-component main = IdentityEnrollment(14, 4);
+// 13 VC fields; Merkle tree depth 4 => 16 leaves (pad unused with 0)
+component main = IdentityEnrollment(13, 4);

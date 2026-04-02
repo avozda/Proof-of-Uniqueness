@@ -6,7 +6,7 @@ interface IEnrollmentVerifier {
         uint256[2] calldata _pA,
         uint256[2][2] calldata _pB,
         uint256[2] calldata _pC,
-        uint256[8] calldata _pubSignals
+        uint256[7] calldata _pubSignals
     ) external view returns (bool);
 }
 
@@ -81,16 +81,16 @@ contract IdentityRegistry {
         uint256[2] calldata _pA,
         uint256[2][2] calldata _pB,
         uint256[2] calldata _pC,
-        uint256[8] calldata _pubSignals
+        uint256[7] calldata _pubSignals
     ) external {
         uint256 hashID = _pubSignals[0];
         if (identities[hashID].exists) revert IdentityAlreadyExists();
 
         uint256 validUntil = _pubSignals[2];
-        uint256 holderPubKeyX = _pubSignals[4];
-        uint256 holderPubKeyY = _pubSignals[5];
-        uint256 signerPubKeyX = _pubSignals[6];
-        uint256 signerPubKeyY = _pubSignals[7];
+        uint256 holderPubKeyX = _pubSignals[3];
+        uint256 holderPubKeyY = _pubSignals[4];
+        uint256 signerPubKeyX = _pubSignals[5];
+        uint256 signerPubKeyY = _pubSignals[6];
 
         uint256 issuerPubKeyHash = uint256(
             keccak256(abi.encodePacked(signerPubKeyX, signerPubKeyY))

@@ -10,7 +10,7 @@ contract MockVerifier {
         uint256[2] calldata,
         uint256[2][2] calldata,
         uint256[2] calldata,
-        uint256[8] calldata
+        uint256[7] calldata
     ) external pure returns (bool) {
         return true;
     }
@@ -49,15 +49,14 @@ contract IdentityRegistryScalingTest is Test {
         uint256[2] memory pA;
         uint256[2][2] memory pB;
         uint256[2] memory pC;
-        uint256[8] memory pubSignals;
+        uint256[7] memory pubSignals;
         
         pubSignals[1] = 0; // issuer field
         pubSignals[2] = block.timestamp + 1000; // validUntil
-        pubSignals[3] = 999;
-        pubSignals[4] = 1234;
-        pubSignals[5] = 4321;
-        pubSignals[6] = ISSUER_X;
-        pubSignals[7] = ISSUER_Y;
+        pubSignals[3] = 1234;
+        pubSignals[4] = 4321;
+        pubSignals[5] = ISSUER_X;
+        pubSignals[6] = ISSUER_Y;
 
         console.log("Measuring gas cost for sequential enrollments:");
         

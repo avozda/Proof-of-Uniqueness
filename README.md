@@ -1,19 +1,17 @@
 # Proof of Uniqueness
 
-Privacy-preserving identity enrollment and revocation on Ethereum using ZK proofs, verifiable credentials, and biometric fuzzy extraction.
+Privacy-preserving identity enrollment and revocation on Ethereum using ZK proofs and holder/issuer EdDSA signatures.
 
 ## Current Crypto Suite
 
 - Holder and issuer signatures: **BabyJubJub EdDSA + Poseidon**
 - Enrollment verification: **Groth16 proof** (`IdentityEnrollment`)
 - Revocation verification: **Groth16 proof** (`IdentityRevocation`)
-- Biometric helper data: fuzzy sketch + deterministic key reconstruction
-
 No legacy ECDSA/secp256k1 path is supported.
 
 ## End-to-End Flow
 
-1. Client enrolls biometric input and produces `(sketch, holder keypair)`.
+1. Client generates holder keypair.
 2. Client creates VC, issuer signs VC Merkle root, holder signs subject binding.
 3. Client generates enrollment proof and submits to `IdentityRegistry.enroll(...)`.
 4. Contract verifies proof + trusted issuer, stores identity record keyed by `hashID`.
@@ -30,7 +28,6 @@ src/
 ├── client/
 │   ├── public/circuits/
 │   └── src/
-├── EdDSA-fuzzy-signature/
 └── smart-contracts/
 ```
 
@@ -42,15 +39,7 @@ src/
 anvil
 ```
 
-### 2) Build EdDSA fuzzy package
-
-```bash
-cd src/EdDSA-fuzzy-signature
-npm install
-npm run build
-```
-
-### 3) Deploy contracts
+### 2) Deploy contracts
 
 ```bash
 cd src/smart-contracts
@@ -58,7 +47,7 @@ forge build
 forge script script/IdentityRegistry.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
 ```
 
-### 4) Run client
+### 3) Run client
 
 ```bash
 cd src/client

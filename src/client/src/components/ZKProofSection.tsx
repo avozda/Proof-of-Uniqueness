@@ -18,7 +18,7 @@ import {
 } from "../lib/proof";
 import type { ZKProof, ProofOutputs, RevocationProof } from "../lib/proof";
 import type { VerifiableCredential } from "../lib/vc";
-import type { MockBiometricData } from "../lib/biometrics";
+import type { HolderKeyPair } from "../lib/holderKey";
 import { identityRegistryAbi } from "../lib/contractAbi";
 import { formatIdentityRegistryTxError } from "../lib/contractErrors";
 import { CONTRACT_ADDRESSES, setContractAddress } from "../lib/wagmi";
@@ -26,13 +26,13 @@ import { CONTRACT_ADDRESSES, setContractAddress } from "../lib/wagmi";
 interface ZKProofSectionProps {
   credential: VerifiableCredential;
   issuerPublicKey: { x: bigint; y: bigint };
-  biometricData: MockBiometricData;
+  holderKeyPair: HolderKeyPair;
 }
 
 export function ZKProofSection({
   credential,
   issuerPublicKey,
-  biometricData,
+  holderKeyPair,
 }: ZKProofSectionProps) {
   const [zkProof, setZkProof] = useState<ZKProof | null>(null);
   const [proofOutputs, setProofOutputs] = useState<ProofOutputs | null>(null);
@@ -300,7 +300,7 @@ export function ZKProofSection({
       const walletChainId = await publicClient.getChainId();
 
       const revokeZkProof = await generateRevocationProof(
-        biometricData,
+        holderKeyPair,
         contractAddress,
         BigInt(walletChainId),
         hashID,
@@ -421,7 +421,6 @@ export function ZKProofSection({
       bigint,
       bigint,
       bigint,
-      bigint,
     ] = [
       BigInt(publicSignals[0]),
       BigInt(publicSignals[1]),
@@ -430,7 +429,6 @@ export function ZKProofSection({
       BigInt(publicSignals[4]),
       BigInt(publicSignals[5]),
       BigInt(publicSignals[6]),
-      BigInt(publicSignals[7]),
     ];
 
     resetSubmit();
@@ -511,14 +509,10 @@ export function ZKProofSection({
                 <code>{proofOutputs.outValidUntil}</code>
               </div>
               <div className="output-item">
-                <span className="output-label">Sketch Hash</span>
-                <code>{proofOutputs.outSketchHash}</code>
-              </div>
-              <div className="output-item">
-                <span className="output-label">Verification Key</span>
+                <span className="output-label">Holder Public Key</span>
                 <code>
-                  [{proofOutputs.outVerificationKey[0].slice(0, 20)}...,{" "}
-                  {proofOutputs.outVerificationKey[1].slice(0, 20)}...]
+                  [{proofOutputs.outHolderPubKey[0].slice(0, 20)}...,{" "}
+                  {proofOutputs.outHolderPubKey[1].slice(0, 20)}...]
                 </code>
               </div>
               <div className="output-item">
@@ -720,7 +714,7 @@ export function ZKProofSection({
                     <div className="revoke-block">
                       <h5>Revoke Enrollment</h5>
                       <p>
-                        Unlock your sketch, sign a fresh block challenge, and remove
+                        Sign a fresh block challenge with holder key and remove
                         this identity from the registry.
                       </p>
                       <p className="meta-note">

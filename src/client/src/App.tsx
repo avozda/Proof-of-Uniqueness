@@ -4,17 +4,16 @@ import type { DIDKeyPair } from "./lib/did";
 import { createVerifiableCredential } from "./lib/vc";
 import { generatePersonId } from "./lib/vc";
 import type { VerifiableCredential, FormData } from "./lib/vc";
-import { enrollBiometric } from "./lib/biometrics";
 import {
   buildHolderBindingMessage,
-  signHolderMessageWithBiometric,
-} from "./lib/biometrics";
-import type { MockBiometricData } from "./lib/biometrics";
+  generateHolderKeyPair,
+  signMessageWithHolderKey,
+  type HolderKeyPair,
+} from "./lib/holderKey";
 import {
   LoadingScreen,
   DIDSection,
   IdentityForm,
-  BiometricInfo,
   CredentialDisplay,
   ZKProofSection,
 } from "./components";
@@ -97,9 +96,7 @@ function App() {
   const [credential, setCredential] = useState<VerifiableCredential | null>(
     null,
   );
-  const [biometricData, setBiometricData] = useState<MockBiometricData | null>(
-    null,
-  );
+  const [holderKeyPair, setHolderKeyPair] = useState<HolderKeyPair | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [cryptoReady, setCryptoReady] = useState(false);
   const [issuerDID, setIssuerDID] = useState<DIDKeyPair | null>(null);
@@ -145,25 +142,22 @@ function App() {
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     try {
-      const biometric = enrollBiometric();
-      const resolvedBiometric = await biometric;
+      const generatedHolderKey = generateHolderKeyPair();
 
       const subjectId = generatePersonId();
       const holderBindingMessage = buildHolderBindingMessage(subjectId);
-      const holderBindingSignature = signHolderMessageWithBiometric(
-        resolvedBiometric.rawBiometric,
-        resolvedBiometric.sketch,
+      const holderBindingSignature = signMessageWithHolderKey(
+        generatedHolderKey.privateKey,
         holderBindingMessage,
       );
 
-      setBiometricData(resolvedBiometric);
+      setHolderKeyPair(generatedHolderKey);
 
       const vc = createVerifiableCredential(
         formData,
         issuerDID,
         "Example Authority",
-        resolvedBiometric.sketch,
-        resolvedBiometric.verificationKey,
+        generatedHolderKey.publicKey,
         {
           r8x: holderBindingSignature.R8[0],
           r8y: holderBindingSignature.R8[1],
@@ -208,26 +202,25 @@ function App() {
           onSubmit={handleSubmit}
         />
 
-        {credential && biometricData && (
+        {credential && holderKeyPair && (
           <section className="result-section">
             <div className="section-header">
               <h2>Generated Credential</h2>
               <p>W3C Verifiable Credential 2.0</p>
             </div>
 
-            <BiometricInfo biometricData={biometricData} />
             <CredentialDisplay credential={credential} />
             <ZKProofSection
               credential={credential}
               issuerPublicKey={issuerDID.publicKey}
-              biometricData={biometricData}
+              holderKeyPair={holderKeyPair}
             />
           </section>
         )}
       </main>
 
       <footer className="footer">
-        <p>Built with EdDSA Poseidon signatures and fuzzy extractors</p>
+        <p>Built with EdDSA Poseidon signatures</p>
       </footer>
     </div>
   );
