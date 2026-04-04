@@ -5,9 +5,7 @@ import { createVerifiableCredential } from "./lib/vc";
 import { generatePersonId } from "./lib/vc";
 import type { VerifiableCredential, FormData } from "./lib/vc";
 import {
-  buildHolderBindingMessage,
   generateHolderKeyPair,
-  signMessageWithHolderKey,
   type HolderKeyPair,
 } from "./lib/holderKey";
 import {
@@ -143,13 +141,7 @@ function App() {
 
     try {
       const generatedHolderKey = generateHolderKeyPair();
-
       const subjectId = generatePersonId();
-      const holderBindingMessage = buildHolderBindingMessage(subjectId);
-      const holderBindingSignature = signMessageWithHolderKey(
-        generatedHolderKey.privateKey,
-        holderBindingMessage,
-      );
 
       setHolderKeyPair(generatedHolderKey);
 
@@ -158,11 +150,6 @@ function App() {
         issuerDID,
         "Example Authority",
         generatedHolderKey.publicKey,
-        {
-          r8x: holderBindingSignature.R8[0],
-          r8y: holderBindingSignature.R8[1],
-          s: holderBindingSignature.S,
-        },
         subjectId,
       );
       setCredential(vc);

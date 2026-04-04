@@ -6,7 +6,6 @@ use poseidon::poseidon::PoseidonHasher;
 use std::default::Default;
 use std::hash::Hasher;
 
-global HOLDER_DOMAIN_SEPARATOR: Field = 167820972663910113509713736073221657714819440573153347582457393;
 global OPRF_DS_N: Field = 24546418369108709687614662004;
 global OPRF_DS_DLOG: Field = 1523098184080632582082867317389990410064981862;
 
@@ -81,66 +80,8 @@ fn eddsa_verify_poseidon(
 }
 
 fn compute_hash_id(
-    domain_separator: Field,
-    merkle_leaves: [Field; 16],
     field_values: [Field; 13],
-    signer_pub_key: [Field; 2],
-    signature_r8: [Field; 2],
-    signature_s: Field,
-    holder_signature_r8: [Field; 2],
-    holder_signature_s: Field,
 ) -> Field {
-    let field_labels = [
-        2118198470571567473536145588563504,
-        2118198470571567473536145588563505,
-        2217739077219273223255122644505107646662330724,
-        6582114,
-        115944579229042,
-        1851878757,
-        133442057126172576218444921,
-        641669309618204160221840285997001192639266124648,
-        34793344991585695257288930408,
-        7562616,
-        2183735902496290402157,
-        559036391039114700679532,
-        1986218340,
-    ];
-
-    for i in 0..13 {
-        let computed_leaf = hash2(field_labels[i], field_values[i]);
-        assert(computed_leaf == merkle_leaves[i]);
-    }
-
-    let root = merkle_root_16(merkle_leaves);
-    let signed_message = hash2(domain_separator, root);
-
-    let issuer_valid = eddsa_verify_poseidon(
-        signer_pub_key[0],
-        signer_pub_key[1],
-        signature_s,
-        signature_r8[0],
-        signature_r8[1],
-        signed_message,
-    );
-    assert(issuer_valid);
-
-    let holder_msg = hash2(HOLDER_DOMAIN_SEPARATOR, field_values[2]);
-    let holder_valid = eddsa_verify_poseidon(
-        field_values[0],
-        field_values[1],
-        holder_signature_s,
-        holder_signature_r8[0],
-        holder_signature_r8[1],
-        holder_msg,
-    );
-    assert(holder_valid);
-
-    let holder_sig_commitment = hash_n([
-        holder_signature_r8[0],
-        holder_signature_r8[1],
-        holder_signature_s,
-    ]);
-
     hash_n([
         field_values[12],
         field_values[2],
@@ -151,7 +92,8 @@ fn compute_hash_id(
         field_values[6],
         field_values[7],
         field_values[10],
-        holder_sig_commitment,
+        field_values[0],
+        field_values[1],
     ])
 }
 
@@ -181,16 +123,51 @@ fn main(
     oprf_key_id: pub Field,
     oprf_epoch: pub Field,
 ) -> pub Field {
-    let hash_id = compute_hash_id(
-        domain_separator,
-        merkle_leaves,
-        field_values,
-        signer_pub_key,
-        signature_r8,
+    let field_labels = [
+        2118198470571567473536145588563504,
+        2118198470571567473536145588563505,
+        2217739077219273223255122644505107646662330724,
+        6582114,
+        115944579229042,
+        1851878757,
+        133442057126172576218444921,
+        641669309618204160221840285997001192639266124648,
+        34793344991585695257288930408,
+        7562616,
+        2183735902496290402157,
+        559036391039114700679532,
+        1986218340,
+    ];
+
+    for i in 0..13 {
+        let computed_leaf = hash2(field_labels[i], field_values[i]);
+        assert(computed_leaf == merkle_leaves[i]);
+    }
+
+    let root = merkle_root_16(merkle_leaves);
+    let signed_message = hash2(domain_separator, root);
+    let issuer_valid = eddsa_verify_poseidon(
+        signer_pub_key[0],
+        signer_pub_key[1],
         signature_s,
-        holder_signature_r8,
-        holder_signature_s,
+        signature_r8[0],
+        signature_r8[1],
+        signed_message,
     );
+    assert(issuer_valid);
+
+    let hash_id = compute_hash_id(
+        field_values,
+    );
+    let holder_valid = eddsa_verify_poseidon(
+        field_values[0],
+        field_values[1],
+        holder_signature_s,
+        holder_signature_r8[0],
+        holder_signature_r8[1],
+        hash_id,
+    );
+    assert(holder_valid);
 
     assert(valid_until == field_values[11]);
     assert(holder_pub_key_x == field_values[0]);

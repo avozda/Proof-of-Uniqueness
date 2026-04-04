@@ -28,7 +28,8 @@ Primary implementation: `src/client/src/lib/oprfEnrollment.ts`
 
 - VC subject/issuer fields are mapped to field elements.
 - Merkle leaves are built from labeled VC fields.
-- Issuer signature and holder binding signature are decoded from VC.
+- Issuer signature is decoded from VC.
+- Holder live binding signature is computed on demand from holder private key over circuit-derived `hashID`.
 - Hard checks:
   - holder key in VC matches active holder keypair,
   - issuer key in VC proof matches active issuer key,
@@ -46,6 +47,7 @@ Primary implementation: `src/client/src/lib/oprfEnrollment.ts`
   - `holderPubKeyX`
   - `holderPubKeyY`
 - `hashID` remains private and is not included in auth proof public outputs.
+- VC no longer needs to embed `holderBindingSignature`; holder binding is proven live during proving.
 
 ### C. Holder request signature binding
 

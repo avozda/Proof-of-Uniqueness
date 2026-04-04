@@ -11,6 +11,11 @@ const REVERT_SELECTOR_MESSAGES: Record<string, string> = {
     "Only the contract owner can perform this action. Connect the deployer wallet.",
   "0xd3c12856": "No identity record exists for this hash ID.",
   "0x0ce8eac5": "This identity credential has expired on-chain.",
+  "0x7feb78f8": "Revocation proof was rejected by the on-chain verifier.",
+  "0x04f7ac42": "Revocation challenge block/hash is invalid for current chain state.",
+  "0xb1bbb042":
+    "Revocation challenge block is too old. Generate a fresh revocation proof.",
+  "0x6d518c60": "Revocation proof holder key does not match the enrolled identity.",
 };
 
 const ERROR_NAME_MESSAGES: Record<string, string> = {

@@ -148,7 +148,6 @@ async function main() {
   const poseidon = await buildPoseidon();
 
   const subject = vc.credentialSubject;
-  const holderSig = subject.holderBindingSignature;
   const issuerSig = decodeProofValue(vc.proof.proofValue);
   const signerPubKey = decodeDidKey(vc.proof.verificationMethod);
 
@@ -168,6 +167,20 @@ async function main() {
     stringToField(vc.id, poseidon),
   ];
 
+  const hashId = poseidonHash([
+    fieldValuesOrdered[12],
+    fieldValuesOrdered[2],
+    fieldValuesOrdered[5],
+    fieldValuesOrdered[3],
+    fieldValuesOrdered[8],
+    fieldValuesOrdered[9],
+    fieldValuesOrdered[6],
+    fieldValuesOrdered[7],
+    fieldValuesOrdered[10],
+    fieldValuesOrdered[0],
+    fieldValuesOrdered[1],
+  ], poseidon);
+
   const content = {
     domain_separator: `"${stringToFieldSimple(SIGNATURE_DOMAIN).toString()}"`,
     merkle_leaves: toTomlArray(computeLeaves(fieldValuesOrdered, poseidon)),
@@ -175,8 +188,10 @@ async function main() {
     signer_pub_key: toTomlArray(signerPubKey),
     signature_r8: toTomlArray(issuerSig.signatureR8),
     signature_s: `"${issuerSig.signatureS.toString()}"`,
-    holder_signature_r8: toTomlArray([BigInt(holderSig.r8x), BigInt(holderSig.r8y)]),
-    holder_signature_s: `"${BigInt(holderSig.s).toString()}"`,
+    // Helper-only legacy placeholder for old proving paths.
+    // The new circuits verify a live holder signature over hashId.
+    holder_signature_r8: toTomlArray([hashId, hashId]),
+    holder_signature_s: `"${hashId.toString()}"`,
   };
 
   await fs.writeFile(outPath, `${toToml(content)}\n`, "utf8");

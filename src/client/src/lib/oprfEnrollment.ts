@@ -244,18 +244,6 @@ function decodeIssuerSig(vc: VerifiableCredential): {
   };
 }
 
-function getHolderSig(vc: VerifiableCredential): {
-  holderSignatureR8: [bigint, bigint];
-  holderSignatureS: bigint;
-} {
-  const hs = vc.credentialSubject.holderBindingSignature;
-  return {
-    holderSignatureR8: [BigInt(hs.r8x), BigInt(hs.r8y)],
-    holderSignatureS: BigInt(hs.s),
-  };
-}
-
-
 async function loadCircuitArtifact(): Promise<CompiledCircuit> {
   const res = await fetch("/circuits/vc_oprf_enrollment_proof.json");
   if (!res.ok) {
@@ -288,12 +276,6 @@ async function loadVcRevocationCircuitArtifact(): Promise<CompiledCircuit> {
 
 function computeHashIdFromVc(vc: VerifiableCredential): bigint {
   const fieldValues = buildFieldValuesOrdered(vc);
-  const holderSig = getHolderSig(vc);
-  const holderSigCommitment = poseidonHash([
-    holderSig.holderSignatureR8[0],
-    holderSig.holderSignatureR8[1],
-    holderSig.holderSignatureS,
-  ]);
   return normalizeField(
     poseidonHash([
       fieldValues[12],
@@ -305,7 +287,8 @@ function computeHashIdFromVc(vc: VerifiableCredential): bigint {
       fieldValues[6],
       fieldValues[7],
       fieldValues[10],
-      holderSigCommitment,
+      fieldValues[0],
+      fieldValues[1],
     ]),
   );
 }
@@ -319,7 +302,8 @@ function buildNoirInputs(
   const fieldValues = buildFieldValuesOrdered(vc);
   const merkleLeaves = buildMerkleLeaves(fieldValues);
   const issuerSig = decodeIssuerSig(vc);
-  const holderSig = getHolderSig(vc);
+  const hashId = computeHashIdFromVc(vc);
+  const holderBindSig = signMessageWithHolderKey(holderKeyPair.privateKey, hashId);
 
   const holderX = BigInt(vc.credentialSubject.holderPublicKey.x);
   const holderY = BigInt(vc.credentialSubject.holderPublicKey.y);
@@ -341,8 +325,8 @@ function buildNoirInputs(
     signer_pub_key: issuerSig.signerPubKey.map((x) => x.toString()),
     signature_r8: issuerSig.signatureR8.map((x) => x.toString()),
     signature_s: issuerSig.signatureS.toString(),
-    holder_signature_r8: holderSig.holderSignatureR8.map((x) => x.toString()),
-    holder_signature_s: holderSig.holderSignatureS.toString(),
+    holder_signature_r8: holderBindSig.R8.map((x) => normalizeField(x).toString()),
+    holder_signature_s: normalizeField(holderBindSig.S).toString(),
     beta: transcript.beta.toString(),
     oprf_pk: {
       x: transcript.oprfPkX.toString(),
@@ -555,7 +539,8 @@ function buildVcBlindedQueryAuthNoirInputs(
   const fieldValues = buildFieldValuesOrdered(vc);
   const merkleLeaves = buildMerkleLeaves(fieldValues);
   const issuerSig = decodeIssuerSig(vc);
-  const holderSig = getHolderSig(vc);
+  const hashId = computeHashIdFromVc(vc);
+  const holderBindSig = signMessageWithHolderKey(holderKeyPair.privateKey, hashId);
 
   const holderX = BigInt(vc.credentialSubject.holderPublicKey.x);
   const holderY = BigInt(vc.credentialSubject.holderPublicKey.y);
@@ -573,8 +558,8 @@ function buildVcBlindedQueryAuthNoirInputs(
     signer_pub_key: issuerSig.signerPubKey.map((x) => x.toString()),
     signature_r8: issuerSig.signatureR8.map((x) => x.toString()),
     signature_s: issuerSig.signatureS.toString(),
-    holder_signature_r8: holderSig.holderSignatureR8.map((x) => x.toString()),
-    holder_signature_s: holderSig.holderSignatureS.toString(),
+    holder_signature_r8: holderBindSig.R8.map((x) => normalizeField(x).toString()),
+    holder_signature_s: normalizeField(holderBindSig.S).toString(),
     beta: beta.toString(),
   };
 }

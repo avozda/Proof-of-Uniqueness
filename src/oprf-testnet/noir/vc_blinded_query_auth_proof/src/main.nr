@@ -6,8 +6,6 @@ use poseidon::poseidon::PoseidonHasher;
 use std::default::Default;
 use std::hash::Hasher;
 
-global HOLDER_DOMAIN_SEPARATOR: Field = 167820972663910113509713736073221657714819440573153347582457393;
-
 fn hash2(left: Field, right: Field) -> Field {
     let mut hasher = PoseidonHasher::default();
     hasher.write(left);
@@ -79,6 +77,24 @@ fn eddsa_verify_poseidon(
 }
 
 fn compute_hash_id(
+    field_values: [Field; 13],
+) -> Field {
+    hash_n([
+        field_values[12],
+        field_values[2],
+        field_values[5],
+        field_values[3],
+        field_values[8],
+        field_values[9],
+        field_values[6],
+        field_values[7],
+        field_values[10],
+        field_values[0],
+        field_values[1],
+    ])
+}
+
+fn main(
     domain_separator: Field,
     merkle_leaves: [Field; 16],
     field_values: [Field; 13],
@@ -87,7 +103,8 @@ fn compute_hash_id(
     signature_s: Field,
     holder_signature_r8: [Field; 2],
     holder_signature_s: Field,
-) -> Field {
+    beta: Field,
+) -> pub (BabyJubJubPoint, [Field; 2]) {
     let field_labels = [
         2118198470571567473536145588563504,
         2118198470571567473536145588563505,
@@ -111,7 +128,6 @@ fn compute_hash_id(
 
     let root = merkle_root_16(merkle_leaves);
     let signed_message = hash2(domain_separator, root);
-
     let issuer_valid = eddsa_verify_poseidon(
         signer_pub_key[0],
         signer_pub_key[1],
@@ -122,58 +138,19 @@ fn compute_hash_id(
     );
     assert(issuer_valid);
 
-    let holder_msg = hash2(HOLDER_DOMAIN_SEPARATOR, field_values[2]);
+    let hash_id = compute_hash_id(
+        field_values,
+    );
     let holder_valid = eddsa_verify_poseidon(
         field_values[0],
         field_values[1],
         holder_signature_s,
         holder_signature_r8[0],
         holder_signature_r8[1],
-        holder_msg,
+        hash_id,
     );
     assert(holder_valid);
 
-    let holder_sig_commitment = hash_n([
-        holder_signature_r8[0],
-        holder_signature_r8[1],
-        holder_signature_s,
-    ]);
-
-    hash_n([
-        field_values[12],
-        field_values[2],
-        field_values[5],
-        field_values[3],
-        field_values[8],
-        field_values[9],
-        field_values[6],
-        field_values[7],
-        field_values[10],
-        holder_sig_commitment,
-    ])
-}
-
-fn main(
-    domain_separator: Field,
-    merkle_leaves: [Field; 16],
-    field_values: [Field; 13],
-    signer_pub_key: [Field; 2],
-    signature_r8: [Field; 2],
-    signature_s: Field,
-    holder_signature_r8: [Field; 2],
-    holder_signature_s: Field,
-    beta: Field,
-) -> pub (BabyJubJubPoint, [Field; 2]) {
-    let hash_id = compute_hash_id(
-        domain_separator,
-        merkle_leaves,
-        field_values,
-        signer_pub_key,
-        signature_r8,
-        signature_s,
-        holder_signature_r8,
-        holder_signature_s,
-    );
     let blinded = blinded_query(beta, hash_id);
     (blinded, [field_values[0], field_values[1]])
 }

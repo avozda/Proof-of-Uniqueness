@@ -7,9 +7,9 @@ import {
   type EdDSASignature,
 } from "./did";
 
-const HOLDER_BIND_DOMAIN = "holder-bjj-bind-subject:v1";
 const HOLDER_OPRF_AUTH_DOMAIN = "holder-bjj-oprf-auth:v1";
-const REVOKE_DOMAIN = "vc-revoke:v1";
+const REVOKE_DOMAIN_SEPARATOR =
+  581564822560125587885439217300392511509116045944773424422209198n;
 
 export interface HolderKeyPair {
   privateKey: Uint8Array;
@@ -32,13 +32,6 @@ export function signMessageWithHolderKey(
   return signMessage(privateKey, message);
 }
 
-export function buildHolderBindingMessage(credentialSubjectId: string): bigint {
-  return poseidonHash([
-    stringToField(HOLDER_BIND_DOMAIN),
-    stringToField(credentialSubjectId),
-  ]);
-}
-
 export function buildHolderOprfAuthMessage(
   requestId: string,
   blindedX: bigint,
@@ -57,7 +50,7 @@ export function buildRevokeChallengeMessage(
   challengeBlockHashField: bigint,
 ): bigint {
   return poseidonHash([
-    stringToField(REVOKE_DOMAIN),
+    REVOKE_DOMAIN_SEPARATOR,
     nullifier,
     challengeBlockHashField,
   ]);

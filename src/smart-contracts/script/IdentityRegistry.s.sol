@@ -4,7 +4,7 @@ pragma solidity ^0.8.13;
 import {Script, console} from "forge-std/Script.sol";
 import {IdentityRegistry} from "../src/IdentityRegistry.sol";
 import {UltraVerifier as VcOprfEnrollmentUltraVerifier} from "../src/VcOprfEnrollmentUltraVerifier.sol";
-import {HonkVerifier as VcRevocationUltraVerifier} from "../src/VcRevocationUltraVerifier.sol";
+import {UltraVerifier as VcRevocationUltraVerifier} from "../src/VcRevocationUltraVerifier.sol";
 
 contract IdentityRegistryScript is Script {
     VcOprfEnrollmentUltraVerifier public verifier;

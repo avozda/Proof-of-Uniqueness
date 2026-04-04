@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   useAccount,
   useConnect,
@@ -33,6 +33,7 @@ export function ZKProofSection({
   holderKeyPair,
 }: ZKProofSectionProps) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isEnrolling, setIsEnrolling] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
   const [generationStatus, setGenerationStatus] = useState<string | null>(null);
   const [proofPackage, setProofPackage] =
@@ -215,8 +216,9 @@ export function ZKProofSection({
       setRevocationStatus("Revocation transaction submitted. Waiting for confirmation...");
       setIsRevoking(false);
     } catch (err) {
-      setProofError(err instanceof Error ? err.message : "Unknown revocation error");
-      setRevocationStatus(null);
+      const msg = err instanceof Error ? err.message : "Unknown revocation error";
+      setProofError(msg);
+      setRevocationStatus(`Revocation failed: ${msg}`);
       setIsRevoking(false);
     }
   };
@@ -240,6 +242,7 @@ export function ZKProofSection({
     }
 
     resetSubmit();
+    setIsEnrolling(true);
     writeContract({
       address: contractAddress,
       abi: identityRegistryAbi,
@@ -286,6 +289,23 @@ export function ZKProofSection({
         : revokeTxOutcomeSettled && revokeTxFailedOnChain
           ? "Revocation transaction was mined but did not succeed."
           : null;
+
+  const revokePhaseActive = isRevoking || isRevocationSubmitting || isRevokeConfirming;
+
+  useEffect(() => {
+    if (!isEnrolling) return;
+    if (submitError || txOutcomeSettled) {
+      setIsEnrolling(false);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setIsEnrolling(false);
+      setProofError(
+        "Enrollment is taking longer than expected. Check wallet and chain status, then retry.",
+      );
+    }, 25000);
+    return () => clearTimeout(timeout);
+  }, [isEnrolling, submitError, txOutcomeSettled]);
 
   const issuerTxFailedOnChain =
     Boolean(issuerTxHash) &&
@@ -500,23 +520,17 @@ export function ZKProofSection({
                   className="submit-button"
                   onClick={handleSubmitToContract}
                   disabled={
-                    isSubmitting ||
-                    isConfirming ||
+                    isEnrolling ||
                     isIssuerSubmitting ||
                     isIssuerConfirming ||
                     !contractAddressValid
                   }
                   type="button"
                 >
-                  {isSubmitting ? (
+                  {isEnrolling ? (
                     <>
                       <span className="spinner" />
-                      Submitting...
-                    </>
-                  ) : isConfirming ? (
-                    <>
-                      <span className="spinner" />
-                      Confirming...
+                      {txHash ? "Confirming..." : "Submitting..."}
                     </>
                   ) : (
                     <>
@@ -557,7 +571,7 @@ export function ZKProofSection({
                   )}
                 </button>
 
-                {revocationStatus && (
+                {revokePhaseActive && revocationStatus && (
                   <div className="proof-data" role="status" aria-live="polite">
                     <p className="proof-description">{revocationStatus}</p>
                   </div>

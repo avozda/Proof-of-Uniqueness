@@ -25,12 +25,6 @@ export interface CredentialSubject {
     x: string;
     y: string;
   };
-  holderBindingSignature: {
-    type: string;
-    r8x: string;
-    r8y: string;
-    s: string;
-  };
 }
 
 export interface DataIntegrityProof {
@@ -81,11 +75,6 @@ export function createVerifiableCredential(
   issuer: DIDKeyPair,
   issuerName: string,
   holderPublicKey: EdDSAPublicKey,
-  holderBindingSignature: {
-    r8x: bigint;
-    r8y: bigint;
-    s: bigint;
-  },
   credentialSubjectId?: string,
 ): VerifiableCredential {
   const now = new Date();
@@ -161,12 +150,6 @@ export function createVerifiableCredential(
         type: "BabyJubJubPublicKey",
         x: holderPublicKey.x.toString(),
         y: holderPublicKey.y.toString(),
-      },
-      holderBindingSignature: {
-        type: "BabyJubJubEdDSA-Poseidon",
-        r8x: holderBindingSignature.r8x.toString(),
-        r8y: holderBindingSignature.r8y.toString(),
-        s: holderBindingSignature.s.toString(),
       },
     },
     proof: {
