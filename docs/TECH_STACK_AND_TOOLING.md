@@ -41,6 +41,7 @@ This document summarizes the technologies used in this repository and why each i
 - Packages: `@noir-lang/noir_js`, `@noir-lang/backend_barretenberg` (client), plus Rust-side Noir tooling crates.
 - Needed because:
   - browser-side witness/proof generation for both auth proof and enrollment proof,
+  - browser-side witness/proof generation for revocation proof,
   - local proof verification/self-check before submission,
   - compatibility with Ultra/Barretenberg-generated verifier artifacts.
 

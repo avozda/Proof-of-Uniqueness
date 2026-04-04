@@ -4,6 +4,7 @@ Foundry project containing:
 
 - `IdentityRegistry.sol`
 - `VcOprfEnrollmentUltraVerifier.sol` (VC + OPRF enrollment)
+- `VcRevocationUltraVerifier.sol` (holder-signature revocation)
 
 ## Commands
 
@@ -69,9 +70,15 @@ If your terminal is non-interactive and prompts still fail, add:
   8. `oprfKeyId`
   9. `oprfEpoch`
   10. `nullifier` (proof return value)
+- Revocation public signals are expected as:
+  1. `nullifier`
+  2. `holderPubKeyX`
+  3. `holderPubKeyY`
+  4. `challengeBlockHash` (`blockhash(challengeBlockNumber) % SNARK_SCALAR_FIELD`)
 - Trusted issuers are stored as `keccak256(issuerPubKeyX, issuerPubKeyY)` hashes.
 - Trusted OPRF public key is enforced on `enroll(...)` by matching signals `oprfPkX/oprfPkY` to contract state.
 - Owners can rotate trusted OPRF key with `setTrustedOprfPublicKey(pkX, pkY)`.
+- Revocation uses zk proof + fresh challenge block (`revoke(proof, publicSignals, challengeBlockNumber)`) and checks holder pubkey against stored identity.
 - `script/IdentityRegistry.s.sol` supports env overrides:
   - `OPRF_PUB_KEY_X`
   - `OPRF_PUB_KEY_Y`

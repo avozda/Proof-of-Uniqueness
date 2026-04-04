@@ -1,0 +1,28 @@
+target
+.vscode
+flamegraph.svg
+perf.data
+perf.data.old
+*.pdf
+logs
+*.ptau
+*.env
+Prover.toml
+proof
+public_inputs
+out
+.ignore
+
+# Vendored dependencies
+contracts/lib/
+noir/vendor/
+
+# Foundry artifacts in the contracts subproject
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+contracts/node_modules/
+
+# Leftover nested git metadata from previous submodules
+**/.git
+**/.gitmodules

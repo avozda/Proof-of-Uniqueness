@@ -3,6 +3,7 @@ export const identityRegistryAbi = [
     type: "constructor",
     inputs: [
       { name: "_enrollmentVerifier", type: "address", internalType: "address" },
+      { name: "_revocationVerifier", type: "address", internalType: "address" },
       { name: "_oprfPkX", type: "uint256", internalType: "uint256" },
       { name: "_oprfPkY", type: "uint256", internalType: "uint256" },
     ],
@@ -64,6 +65,17 @@ export const identityRegistryAbi = [
   },
   {
     type: "function",
+    name: "revoke",
+    inputs: [
+      { name: "proof", type: "bytes", internalType: "bytes" },
+      { name: "publicSignals", type: "bytes32[]", internalType: "bytes32[]" },
+      { name: "challengeBlockNumber", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "getIdentity",
     inputs: [{ name: "nullifier", type: "uint256", internalType: "uint256" }],
     outputs: [
@@ -118,6 +130,20 @@ export const identityRegistryAbi = [
   },
   {
     type: "function",
+    name: "revocationVerifier",
+    inputs: [],
+    outputs: [{ name: "", type: "address", internalType: "address" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "revokeDomainSeparator",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    stateMutability: "pure",
+  },
+  {
+    type: "function",
     name: "owners",
     inputs: [{ name: "", type: "address", internalType: "address" }],
     outputs: [{ name: "", type: "bool", internalType: "bool" }],
@@ -155,6 +181,15 @@ export const identityRegistryAbi = [
       { name: "oprfEpoch", type: "uint256", indexed: false, internalType: "uint256" },
       { name: "oprfPkX", type: "uint256", indexed: false, internalType: "uint256" },
       { name: "oprfPkY", type: "uint256", indexed: false, internalType: "uint256" },
+    ],
+    anonymous: false,
+  },
+  {
+    type: "event",
+    name: "IdentityRevoked",
+    inputs: [
+      { name: "nullifier", type: "uint256", indexed: true, internalType: "uint256" },
+      { name: "challengeBlockNumber", type: "uint256", indexed: false, internalType: "uint256" },
     ],
     anonymous: false,
   },
@@ -200,8 +235,12 @@ export const identityRegistryAbi = [
   { type: "error", name: "IdentityExpired", inputs: [] },
   { type: "error", name: "InvalidFieldElement", inputs: [] },
   { type: "error", name: "InvalidOprfMetadata", inputs: [] },
+  { type: "error", name: "InvalidChallengeBlock", inputs: [] },
+  { type: "error", name: "InvalidRevocationProof", inputs: [] },
   { type: "error", name: "InvalidProof", inputs: [] },
   { type: "error", name: "InvalidPublicSignalLength", inputs: [] },
+  { type: "error", name: "HolderKeyMismatch", inputs: [] },
+  { type: "error", name: "RevocationChallengeExpired", inputs: [] },
   { type: "error", name: "IssuerNotTrusted", inputs: [] },
   { type: "error", name: "NotOwner", inputs: [] },
   { type: "error", name: "UntrustedOprfPublicKey", inputs: [] },

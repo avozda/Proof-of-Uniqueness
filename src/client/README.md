@@ -37,6 +37,7 @@ If missing or replaced by HTML (e.g. 404 fallback page), browser proving fails w
 - The frontend is OPRF-enrollment focused and submits `enroll(bytes,bytes32[])`.
 - OPRF package generation is strict and live-only: no scaffold fallback path.
 - The app uses browser-side Noir + Barretenberg generation with `/circuits/vc_oprf_enrollment_proof.json`.
+- Revocation uses browser-side Noir generation with `/circuits/vc_revocation_proof.json` and on-chain challenge block freshness checks.
 - OPRF transcript/auth is `vc-ownership` only.
 - UI no longer exposes manual package import, transcript input, network config inputs, or strict-mode toggles.
 - Contract address is configured from `src/lib/wagmi.ts` and not user-editable in the UI.

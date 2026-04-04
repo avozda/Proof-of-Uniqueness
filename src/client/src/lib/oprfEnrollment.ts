@@ -23,6 +23,7 @@ import type { VerifiableCredential } from "./vc";
 import type { HolderKeyPair } from "./holderKey";
 import {
   buildHolderOprfAuthMessage,
+  buildRevokeChallengeMessage,
   signMessageWithHolderKey,
 } from "./holderKey";
 import {
@@ -107,6 +108,18 @@ export interface VcOprfEnrollmentProofPackage {
     oprfKeyId: string;
     oprfEpoch: string;
     nullifier: string;
+  };
+}
+
+export interface VcRevocationProofPackage {
+  proof: `0x${string}`;
+  publicSignals: `0x${string}`[];
+  challengeBlockNumber: bigint;
+  decoded: {
+    nullifier: string;
+    holderPubKeyX: string;
+    holderPubKeyY: string;
+    challengeBlockHash: string;
   };
 }
 
@@ -258,6 +271,16 @@ async function loadVcBlindedQueryAuthCircuitArtifact(): Promise<CompiledCircuit>
   if (!res.ok) {
     throw new Error(
       "Missing /circuits/vc_blinded_query_auth_proof.json. Copy it from src/oprf-testnet/noir/vc_blinded_query_auth_proof/target/",
+    );
+  }
+  return (await res.json()) as CompiledCircuit;
+}
+
+async function loadVcRevocationCircuitArtifact(): Promise<CompiledCircuit> {
+  const res = await fetch("/circuits/vc_revocation_proof.json");
+  if (!res.ok) {
+    throw new Error(
+      "Missing /circuits/vc_revocation_proof.json. Copy it from src/oprf-testnet/noir/vc_revocation_proof/target/",
     );
   }
   return (await res.json()) as CompiledCircuit;
@@ -768,6 +791,60 @@ export async function buildVcOprfEnrollmentProofPackage(
     }
     throw new Error("OPRF package generation failed");
   }
+}
+
+function decodeRevocationSignals(signals: bigint[]) {
+  if (signals.length !== 4) {
+    throw new Error("Revocation proof must expose exactly 4 public signals");
+  }
+  return {
+    nullifier: signals[0].toString(),
+    holderPubKeyX: signals[1].toString(),
+    holderPubKeyY: signals[2].toString(),
+    challengeBlockHash: signals[3].toString(),
+  };
+}
+
+export async function buildVcRevocationProofPackage(
+  nullifier: bigint,
+  holderKeyPair: HolderKeyPair,
+  challengeBlockHash: bigint,
+  challengeBlockNumber: bigint,
+  onProgress?: ProgressReporter,
+): Promise<VcRevocationProofPackage> {
+  onProgress?.("Loading revocation circuit...");
+  const circuit = await loadVcRevocationCircuitArtifact();
+  assertCircuitCompatibility(circuit);
+
+  const revokeMessage = buildRevokeChallengeMessage(
+    normalizeField(nullifier),
+    normalizeField(challengeBlockHash),
+  );
+  const revokeSig = signMessageWithHolderKey(holderKeyPair.privateKey, revokeMessage);
+
+  const inputs = {
+    nullifier: normalizeField(nullifier).toString(),
+    holder_pub_key_x: normalizeField(holderKeyPair.publicKey.x).toString(),
+    holder_pub_key_y: normalizeField(holderKeyPair.publicKey.y).toString(),
+    challenge_block_hash: normalizeField(challengeBlockHash).toString(),
+    holder_sig_r8: [
+      normalizeField(revokeSig.R8[0]).toString(),
+      normalizeField(revokeSig.R8[1]).toString(),
+    ],
+    holder_sig_s: normalizeField(revokeSig.S).toString(),
+  };
+
+  onProgress?.("Generating revocation proof...");
+  const proofData = await generateWithNoir(circuit, inputs);
+  const publicSignalsBig = proofData.publicInputs.map((x) => normalizeField(BigInt(x)));
+
+  onProgress?.("Finalizing revocation package...");
+  return {
+    proof: toHex(proofData.proof),
+    publicSignals: publicSignalsBig.map(toBytes32Hex),
+    challengeBlockNumber,
+    decoded: decodeRevocationSignals(publicSignalsBig),
+  };
 }
 
 export function parseVcOprfEnrollmentProofPackage(

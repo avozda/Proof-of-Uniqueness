@@ -5,6 +5,10 @@ interface IVcOprfEnrollmentVerifier {
     function verify(bytes calldata _proof, bytes32[] calldata _publicInputs) external returns (bool);
 }
 
+interface IVcRevocationVerifier {
+    function verify(bytes calldata _proof, bytes32[] calldata _publicInputs) external view returns (bool);
+}
+
 contract IdentityRegistry {
     uint256 private constant SNARK_SCALAR_FIELD =
         21888242871839275222246405745257275088548364400416034343698204186575808495617;
@@ -56,8 +60,12 @@ contract IdentityRegistry {
     uint256 private constant SIGNAL_NULLIFIER = 9;
     uint256 private constant PUBLIC_SIGNALS_LENGTH = 10;
     uint256 private constant VC_OWNERSHIP_OPRF_KEY_ID = 3;
+    uint256 private constant REVOCATION_PUBLIC_SIGNALS_LENGTH = 4;
+    uint256 private constant REVOCATION_BLOCK_WINDOW = 10;
+    uint256 private constant REVOKE_DOMAIN_SEPARATOR = 581564822560125587885439217300392511509116045944773424422209198;
 
     IVcOprfEnrollmentVerifier public immutable enrollmentVerifier;
+    IVcRevocationVerifier public immutable revocationVerifier;
     uint256 public trustedOprfPkX;
     uint256 public trustedOprfPkY;
 
@@ -82,6 +90,7 @@ contract IdentityRegistry {
     event OwnerAdded(address indexed owner);
     event OwnerRemoved(address indexed owner);
     event TrustedOprfPublicKeyUpdated(uint256 oldPkX, uint256 oldPkY, uint256 newPkX, uint256 newPkY);
+    event IdentityRevoked(uint256 indexed nullifier, uint256 challengeBlockNumber);
 
     error NotOwner();
     error IssuerNotTrusted();
@@ -93,17 +102,23 @@ contract IdentityRegistry {
     error InvalidFieldElement();
     error InvalidOprfMetadata();
     error UntrustedOprfPublicKey();
+    error InvalidRevocationProof();
+    error RevocationChallengeExpired();
+    error InvalidChallengeBlock();
+    error HolderKeyMismatch();
 
     modifier onlyOwner() {
         if (!owners[msg.sender]) revert NotOwner();
         _;
     }
 
-    constructor(address _enrollmentVerifier, uint256 _oprfPkX, uint256 _oprfPkY) {
+    constructor(address _enrollmentVerifier, address _revocationVerifier, uint256 _oprfPkX, uint256 _oprfPkY) {
         require(_enrollmentVerifier.code.length > 0, "Verifier has no runtime code");
+        require(_revocationVerifier.code.length > 0, "Revocation verifier has no runtime code");
         if (_oprfPkX == 0 || _oprfPkY == 0) revert InvalidOprfMetadata();
         if (_oprfPkX >= SNARK_SCALAR_FIELD || _oprfPkY >= SNARK_SCALAR_FIELD) revert InvalidFieldElement();
         enrollmentVerifier = IVcOprfEnrollmentVerifier(_enrollmentVerifier);
+        revocationVerifier = IVcRevocationVerifier(_revocationVerifier);
         trustedOprfPkX = _oprfPkX;
         trustedOprfPkY = _oprfPkY;
         owners[msg.sender] = true;
@@ -196,6 +211,49 @@ contract IdentityRegistry {
         return record.exists && block.timestamp <= record.validUntil;
     }
 
+    function revoke(bytes calldata proof, bytes32[] calldata publicSignals, uint256 challengeBlockNumber) external {
+        if (publicSignals.length != REVOCATION_PUBLIC_SIGNALS_LENGTH) revert InvalidPublicSignalLength();
+        for (uint256 i = 0; i < REVOCATION_PUBLIC_SIGNALS_LENGTH; i++) {
+            if (uint256(publicSignals[i]) >= SNARK_SCALAR_FIELD) revert InvalidFieldElement();
+        }
+
+        uint256 currentBlock = block.number;
+        if (challengeBlockNumber >= currentBlock) revert InvalidChallengeBlock();
+        if (currentBlock - challengeBlockNumber > REVOCATION_BLOCK_WINDOW) revert RevocationChallengeExpired();
+
+        uint256 nullifier = uint256(publicSignals[0]);
+        IdentityRecord storage record = identitiesByNullifier[nullifier];
+        if (!record.exists) revert IdentityNotFound();
+
+        uint256 holderPubKeyX = uint256(publicSignals[1]);
+        uint256 holderPubKeyY = uint256(publicSignals[2]);
+        if (holderPubKeyX != record.holderPubKeyX || holderPubKeyY != record.holderPubKeyY) {
+            revert HolderKeyMismatch();
+        }
+
+        bytes32 challengeHashBytes = blockhash(challengeBlockNumber);
+        if (challengeHashBytes == bytes32(0)) revert InvalidChallengeBlock();
+        uint256 challengeHashField = uint256(challengeHashBytes) % SNARK_SCALAR_FIELD;
+        if (uint256(publicSignals[3]) != challengeHashField) revert InvalidChallengeBlock();
+
+        bytes32[] memory verifierSignals = new bytes32[](REVOCATION_PUBLIC_SIGNALS_LENGTH);
+        verifierSignals[0] = publicSignals[0];
+        verifierSignals[1] = publicSignals[1];
+        verifierSignals[2] = publicSignals[2];
+        verifierSignals[3] = bytes32(challengeHashField);
+
+        bool ok;
+        try revocationVerifier.verify(proof, verifierSignals) returns (bool result) {
+            ok = result;
+        } catch {
+            revert InvalidRevocationProof();
+        }
+        if (!ok) revert InvalidRevocationProof();
+
+        delete identitiesByNullifier[nullifier];
+        emit IdentityRevoked(nullifier, challengeBlockNumber);
+    }
+
     function getIdentityCount() external view returns (uint256 count) {
         return registeredNullifiers.length;
     }
@@ -237,5 +295,9 @@ contract IdentityRegistry {
         trustedOprfPkY = pkY;
 
         emit TrustedOprfPublicKeyUpdated(oldX, oldY, pkX, pkY);
+    }
+
+    function revokeDomainSeparator() external pure returns (uint256) {
+        return REVOKE_DOMAIN_SEPARATOR;
     }
 }

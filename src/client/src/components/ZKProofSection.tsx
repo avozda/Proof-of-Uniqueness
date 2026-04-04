@@ -16,6 +16,7 @@ import { formatIdentityRegistryTxError } from "../lib/contractErrors";
 import { CONTRACT_ADDRESSES } from "../lib/wagmi";
 import {
   buildVcOprfEnrollmentProofPackage,
+  buildVcRevocationProofPackage,
   type OprfNetworkConfig,
   type VcOprfEnrollmentProofPackage,
 } from "../lib/oprfEnrollment";
@@ -36,6 +37,8 @@ export function ZKProofSection({
   const [generationStatus, setGenerationStatus] = useState<string | null>(null);
   const [proofPackage, setProofPackage] =
     useState<VcOprfEnrollmentProofPackage | null>(null);
+  const [isRevoking, setIsRevoking] = useState(false);
+  const [revocationStatus, setRevocationStatus] = useState<string | null>(null);
 
   const contractAddress = CONTRACT_ADDRESSES.identityRegistry;
   const networkConfig: OprfNetworkConfig = {
@@ -62,6 +65,14 @@ export function ZKProofSection({
   } = useWriteContract({ mutation: { retry: false } });
 
   const {
+    writeContract: writeRevokeContract,
+    data: revokeTxHash,
+    isPending: isRevocationSubmitting,
+    error: revokeSubmitError,
+    reset: resetRevokeSubmit,
+  } = useWriteContract({ mutation: { retry: false } });
+
+  const {
     writeContract: writeIssuerTx,
     data: issuerTxHash,
     isPending: isIssuerSubmitting,
@@ -76,6 +87,14 @@ export function ZKProofSection({
     isError: receiptWaitFailed,
     error: receiptWaitError,
   } = useWaitForTransactionReceipt({ hash: txHash, query: { retry: false } });
+
+  const {
+    data: revokeReceipt,
+    isLoading: isRevokeConfirming,
+    isSuccess: revokeReceiptReady,
+    isError: revokeReceiptWaitFailed,
+    error: revokeReceiptWaitError,
+  } = useWaitForTransactionReceipt({ hash: revokeTxHash, query: { retry: false } });
 
   const {
     data: issuerReceipt,
@@ -130,6 +149,78 @@ export function ZKProofSection({
     }
   };
 
+  const handleRevokeIdentity = async () => {
+    if (!proofPackage || !contractAddressValid) return;
+    setIsRevoking(true);
+    setRevocationStatus("Fetching latest challenge block...");
+    setProofError(null);
+    resetRevokeSubmit();
+
+    try {
+      const blockNumberResp = await fetch("http://127.0.0.1:8545", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_blockNumber",
+          params: [],
+        }),
+      });
+      const blockNumberJson = (await blockNumberResp.json()) as {
+        result?: string;
+      };
+      if (!blockNumberJson.result) throw new Error("Failed to read latest block number");
+      const latest = BigInt(blockNumberJson.result);
+      if (latest <= 1n) throw new Error("Chain has insufficient blocks for challenge");
+      const challengeBlock = latest - 1n;
+
+      setRevocationStatus("Fetching challenge block hash...");
+      const blockResp = await fetch("http://127.0.0.1:8545", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "eth_getBlockByNumber",
+          params: [`0x${challengeBlock.toString(16)}`, false],
+        }),
+      });
+      const blockJson = (await blockResp.json()) as {
+        result?: { hash?: string };
+      };
+      const blockHashHex = blockJson.result?.hash;
+      if (!blockHashHex || !/^0x[0-9a-fA-F]{64}$/.test(blockHashHex)) {
+        throw new Error("Failed to fetch challenge block hash");
+      }
+      const FIELD_MODULUS =
+        21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+      const challengeHashField = BigInt(blockHashHex) % FIELD_MODULUS;
+
+      const pkg = await buildVcRevocationProofPackage(
+        BigInt(proofPackage.decoded.nullifier),
+        holderKeyPair,
+        challengeHashField,
+        challengeBlock,
+        (message) => setRevocationStatus(message),
+      );
+
+      setRevocationStatus("Submitting revocation transaction...");
+      writeRevokeContract({
+        address: contractAddress,
+        abi: identityRegistryAbi,
+        functionName: "revoke",
+        args: [pkg.proof, pkg.publicSignals, pkg.challengeBlockNumber],
+      });
+      setRevocationStatus("Revocation transaction submitted. Waiting for confirmation...");
+      setIsRevoking(false);
+    } catch (err) {
+      setProofError(err instanceof Error ? err.message : "Unknown revocation error");
+      setRevocationStatus(null);
+      setIsRevoking(false);
+    }
+  };
+
   const handleRegisterIssuerOnChain = () => {
     if (!contractAddressValid) return;
     resetIssuerSubmit();
@@ -171,6 +262,29 @@ export function ZKProofSection({
           : String(receiptWaitError)
         : txOutcomeSettled && txFailedOnChain
           ? "Transaction was mined but did not succeed (reverted or missing status)."
+          : null;
+
+  const revokeTxFailedOnChain =
+    Boolean(revokeTxHash) &&
+    revokeReceiptReady &&
+    revokeReceipt != null &&
+    revokeReceipt.status !== "success";
+  const revokeTxSucceededOnChain =
+    Boolean(revokeTxHash) &&
+    revokeReceiptReady &&
+    revokeReceipt != null &&
+    revokeReceipt.status === "success";
+  const revokeTxOutcomeSettled =
+    Boolean(revokeTxHash) && !isRevocationSubmitting && !isRevokeConfirming;
+  const displayRevokeTxError =
+    revokeSubmitError != null
+      ? formatIdentityRegistryTxError(revokeSubmitError)
+      : revokeTxOutcomeSettled && revokeReceiptWaitFailed
+        ? revokeReceiptWaitError instanceof Error
+          ? formatIdentityRegistryTxError(revokeReceiptWaitError)
+          : String(revokeReceiptWaitError)
+        : revokeTxOutcomeSettled && revokeTxFailedOnChain
+          ? "Revocation transaction was mined but did not succeed."
           : null;
 
   const issuerTxFailedOnChain =
@@ -411,6 +525,63 @@ export function ZKProofSection({
                     </>
                   )}
                 </button>
+
+                <button
+                  className="submit-button"
+                  onClick={handleRevokeIdentity}
+                  disabled={
+                    isRevoking ||
+                    isRevocationSubmitting ||
+                    isRevokeConfirming ||
+                    isSubmitting ||
+                    isConfirming ||
+                    !contractAddressValid
+                  }
+                  type="button"
+                >
+                  {isRevoking || isRevocationSubmitting ? (
+                    <>
+                      <span className="spinner" />
+                      Revoking...
+                    </>
+                  ) : isRevokeConfirming ? (
+                    <>
+                      <span className="spinner" />
+                      Confirming revocation...
+                    </>
+                  ) : (
+                    <>
+                      <span className="btn-icon">🗑️</span>
+                      Revoke Identity
+                    </>
+                  )}
+                </button>
+
+                {revocationStatus && (
+                  <div className="proof-data" role="status" aria-live="polite">
+                    <p className="proof-description">{revocationStatus}</p>
+                  </div>
+                )}
+
+                {displayRevokeTxError != null && (
+                  <div className="tx-error" role="alert">
+                    <span className="tx-error-icon">❌</span>
+                    <span className="tx-error-text">{displayRevokeTxError}</span>
+                  </div>
+                )}
+
+                {revokeTxSucceededOnChain && (
+                  <div className="proof-status" role="status">
+                    <span className="proof-verified">✓ Identity revoked on-chain</span>
+                  </div>
+                )}
+
+                {revokeTxHash && (
+                  <div className="tx-info">
+                    <span className="tx-label">Revocation Tx:</span>
+                    <code className="tx-hash">{revokeTxHash}</code>
+                  </div>
+                )}
 
                 {displayTxError != null && (
                   <div className="tx-error" role="alert">

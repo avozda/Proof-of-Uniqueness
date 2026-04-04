@@ -11,6 +11,18 @@ contract MockUltraVerifier {
     }
 }
 
+contract MockRevocationVerifier {
+    bool public verifyResult = true;
+
+    function setVerifyResult(bool result) external {
+        verifyResult = result;
+    }
+
+    function verify(bytes calldata, bytes32[] calldata) external view returns (bool) {
+        return verifyResult;
+    }
+}
+
 contract IdentityRegistryE2ETest is Test {
     uint256 internal constant ISSUER_X = 123;
     uint256 internal constant ISSUER_Y = 456;
@@ -37,7 +49,9 @@ contract IdentityRegistryE2ETest is Test {
 
     function testE2E_MockVerifier_EnrollAndReadBack() public {
         MockUltraVerifier mockVerifier = new MockUltraVerifier();
-        IdentityRegistry registry = new IdentityRegistry(address(mockVerifier), OPRF_PK_X, OPRF_PK_Y);
+        MockRevocationVerifier revocationVerifier = new MockRevocationVerifier();
+        IdentityRegistry registry =
+            new IdentityRegistry(address(mockVerifier), address(revocationVerifier), OPRF_PK_X, OPRF_PK_Y);
 
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
 
@@ -61,7 +75,9 @@ contract IdentityRegistryE2ETest is Test {
 
     function testE2E_RealUltraVerifier_RejectsMalformedProof() public {
         VcOprfEnrollmentUltraVerifier realVerifier = new VcOprfEnrollmentUltraVerifier();
-        IdentityRegistry registry = new IdentityRegistry(address(realVerifier), OPRF_PK_X, OPRF_PK_Y);
+        MockRevocationVerifier revocationVerifier = new MockRevocationVerifier();
+        IdentityRegistry registry =
+            new IdentityRegistry(address(realVerifier), address(revocationVerifier), OPRF_PK_X, OPRF_PK_Y);
 
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
 
@@ -74,7 +90,9 @@ contract IdentityRegistryE2ETest is Test {
 
     function testE2E_RevertOnUntrustedOprfKey() public {
         MockUltraVerifier mockVerifier = new MockUltraVerifier();
-        IdentityRegistry registry = new IdentityRegistry(address(mockVerifier), OPRF_PK_X, OPRF_PK_Y);
+        MockRevocationVerifier revocationVerifier = new MockRevocationVerifier();
+        IdentityRegistry registry =
+            new IdentityRegistry(address(mockVerifier), address(revocationVerifier), OPRF_PK_X, OPRF_PK_Y);
 
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
 
@@ -84,5 +102,27 @@ contract IdentityRegistryE2ETest is Test {
 
         vm.expectRevert(IdentityRegistry.UntrustedOprfPublicKey.selector);
         registry.enroll(proof, signals);
+    }
+
+    function testE2E_RevokeDeletesIdentity() public {
+        MockUltraVerifier mockVerifier = new MockUltraVerifier();
+        MockRevocationVerifier revocationVerifier = new MockRevocationVerifier();
+        IdentityRegistry registry =
+            new IdentityRegistry(address(mockVerifier), address(revocationVerifier), OPRF_PK_X, OPRF_PK_Y);
+
+        registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
+        registry.enroll(hex"01", _signals(777, block.timestamp + 3600, ISSUER_X, ISSUER_Y));
+
+        uint256 challengeBlock = block.number - 1;
+        bytes32[] memory revokeSignals = new bytes32[](4);
+        revokeSignals[0] = bytes32(uint256(777));
+        revokeSignals[1] = bytes32(uint256(12345));
+        revokeSignals[2] = bytes32(uint256(67890));
+        revokeSignals[3] = bytes32(uint256(blockhash(challengeBlock)) % 21888242871839275222246405745257275088548364400416034343698204186575808495617);
+
+        registry.revoke(hex"01", revokeSignals, challengeBlock);
+
+        vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
+        registry.getIdentity(777);
     }
 }

@@ -27,6 +27,13 @@ const ERROR_NAME_MESSAGES: Record<string, string> = {
   InvalidOprfMetadata: "Invalid OPRF metadata (key id/epoch).",
   UntrustedOprfPublicKey:
     "Proof uses an OPRF public key that is not trusted by this contract.",
+  InvalidRevocationProof: "Revocation proof was rejected by the on-chain verifier.",
+  RevocationChallengeExpired:
+    "Revocation challenge block is too old. Generate a fresh revocation proof.",
+  InvalidChallengeBlock:
+    "Revocation challenge block/hash is invalid for current chain state.",
+  HolderKeyMismatch:
+    "Revocation proof holder key does not match the enrolled identity.",
 };
 
 function isHexData(value: unknown): value is `0x${string}` {
@@ -154,6 +161,18 @@ export function formatIdentityRegistryTxError(err: Error): string {
   }
   if (msg.includes("UntrustedOprfPublicKey")) {
     return ERROR_NAME_MESSAGES.UntrustedOprfPublicKey;
+  }
+  if (msg.includes("InvalidRevocationProof")) {
+    return ERROR_NAME_MESSAGES.InvalidRevocationProof;
+  }
+  if (msg.includes("RevocationChallengeExpired")) {
+    return ERROR_NAME_MESSAGES.RevocationChallengeExpired;
+  }
+  if (msg.includes("InvalidChallengeBlock")) {
+    return ERROR_NAME_MESSAGES.InvalidChallengeBlock;
+  }
+  if (msg.includes("HolderKeyMismatch")) {
+    return ERROR_NAME_MESSAGES.HolderKeyMismatch;
   }
   if (msg.includes("InvalidPublicSignalLength")) {
     return ERROR_NAME_MESSAGES.InvalidPublicSignalLength;

@@ -4,9 +4,11 @@ pragma solidity ^0.8.13;
 import {Script, console} from "forge-std/Script.sol";
 import {IdentityRegistry} from "../src/IdentityRegistry.sol";
 import {UltraVerifier as VcOprfEnrollmentUltraVerifier} from "../src/VcOprfEnrollmentUltraVerifier.sol";
+import {HonkVerifier as VcRevocationUltraVerifier} from "../src/VcRevocationUltraVerifier.sol";
 
 contract IdentityRegistryScript is Script {
     VcOprfEnrollmentUltraVerifier public verifier;
+    VcRevocationUltraVerifier public revocationVerifier;
     IdentityRegistry public identityRegistry;
 
     // Default trusted issuer public key (replace with actual issuer keys in production)
@@ -33,8 +35,17 @@ contract IdentityRegistryScript is Script {
         console.log("VcOprfEnrollmentUltraVerifier deployed at:", address(verifier));
         require(address(verifier).code.length > 0, "Verifier deployment failed (no runtime code)");
 
+        revocationVerifier = new VcRevocationUltraVerifier();
+        console.log("VcRevocationUltraVerifier deployed at:", address(revocationVerifier));
+        require(address(revocationVerifier).code.length > 0, "Revocation verifier deployment failed (no runtime code)");
+
         // Deploy IdentityRegistry with the verifier address
-        identityRegistry = new IdentityRegistry(address(verifier), trustedOprfPkX, trustedOprfPkY);
+        identityRegistry = new IdentityRegistry(
+            address(verifier),
+            address(revocationVerifier),
+            trustedOprfPkX,
+            trustedOprfPkY
+        );
         console.log("IdentityRegistry deployed at:", address(identityRegistry));
         console.log("Trusted OPRF public key X:", trustedOprfPkX);
         console.log("Trusted OPRF public key Y:", trustedOprfPkY);

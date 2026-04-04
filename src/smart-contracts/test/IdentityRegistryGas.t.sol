@@ -22,9 +22,22 @@ contract MockUltraVerifier {
     }
 }
 
+contract MockRevocationVerifier {
+    bool public verifyResult = true;
+
+    function setVerifyResult(bool result) external {
+        verifyResult = result;
+    }
+
+    function verify(bytes calldata, bytes32[] calldata) external view returns (bool) {
+        return verifyResult;
+    }
+}
+
 contract IdentityRegistryGasTest is Test {
     IdentityRegistry public registry;
     MockUltraVerifier public verifier;
+    MockRevocationVerifier public revocationVerifier;
 
     uint256 public constant ISSUER_X = 123;
     uint256 public constant ISSUER_Y = 456;
@@ -33,8 +46,22 @@ contract IdentityRegistryGasTest is Test {
 
     function setUp() public {
         verifier = new MockUltraVerifier();
-        registry = new IdentityRegistry(address(verifier), OPRF_PK_X, OPRF_PK_Y);
+        revocationVerifier = new MockRevocationVerifier();
+        registry = new IdentityRegistry(address(verifier), address(revocationVerifier), OPRF_PK_X, OPRF_PK_Y);
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
+    }
+
+    function _revokeSignals(uint256 nullifier, uint256 challengeBlock)
+        internal
+        view
+        returns (bytes32[] memory signals)
+    {
+        signals = new bytes32[](4);
+        signals[0] = bytes32(nullifier);
+        signals[1] = bytes32(uint256(12345));
+        signals[2] = bytes32(uint256(67890));
+        signals[3] =
+            bytes32(uint256(blockhash(challengeBlock)) % 21888242871839275222246405745257275088548364400416034343698204186575808495617);
     }
 
     function _signals(uint256 nullifier) internal view returns (bytes32[] memory signals) {
@@ -154,5 +181,39 @@ contract IdentityRegistryGasTest is Test {
         vm.prank(address(0xBEEF));
         vm.expectRevert(IdentityRegistry.NotOwner.selector);
         registry.setTrustedOprfPublicKey(OPRF_PK_X + 1, OPRF_PK_Y + 1);
+    }
+
+    function testRevokeSuccess() public {
+        registry.enroll(hex"01", _signals(900));
+        uint256 challengeBlock = block.number - 1;
+        registry.revoke(hex"01", _revokeSignals(900, challengeBlock), challengeBlock);
+
+        vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
+        registry.getIdentity(900);
+    }
+
+    function testRevokeRejectsStaleChallenge() public {
+        registry.enroll(hex"01", _signals(901));
+        vm.roll(block.number + 20);
+        uint256 staleBlock = block.number - 11;
+        vm.expectRevert(IdentityRegistry.RevocationChallengeExpired.selector);
+        registry.revoke(hex"01", _revokeSignals(901, staleBlock), staleBlock);
+    }
+
+    function testRevokeRejectsHolderMismatch() public {
+        registry.enroll(hex"01", _signals(902));
+        uint256 challengeBlock = block.number - 1;
+        bytes32[] memory signals = _revokeSignals(902, challengeBlock);
+        signals[1] = bytes32(uint256(999));
+        vm.expectRevert(IdentityRegistry.HolderKeyMismatch.selector);
+        registry.revoke(hex"01", signals, challengeBlock);
+    }
+
+    function testRevokeRejectsInvalidProof() public {
+        registry.enroll(hex"01", _signals(903));
+        uint256 challengeBlock = block.number - 1;
+        revocationVerifier.setVerifyResult(false);
+        vm.expectRevert(IdentityRegistry.InvalidRevocationProof.selector);
+        registry.revoke(hex"01", _revokeSignals(903, challengeBlock), challengeBlock);
     }
 }

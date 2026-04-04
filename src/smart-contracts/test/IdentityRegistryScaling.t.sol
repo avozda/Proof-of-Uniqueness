@@ -10,9 +10,16 @@ contract MockUltraVerifier {
     }
 }
 
+contract MockRevocationVerifier {
+    function verify(bytes calldata, bytes32[] calldata) external pure returns (bool) {
+        return true;
+    }
+}
+
 contract IdentityRegistryScalingTest is Test {
     IdentityRegistry public registry;
     MockUltraVerifier public verifier;
+    MockRevocationVerifier public revocationVerifier;
 
     uint256 public constant ISSUER_X = 123;
     uint256 public constant ISSUER_Y = 456;
@@ -21,7 +28,8 @@ contract IdentityRegistryScalingTest is Test {
 
     function setUp() public {
         verifier = new MockUltraVerifier();
-        registry = new IdentityRegistry(address(verifier), OPRF_PK_X, OPRF_PK_Y);
+        revocationVerifier = new MockRevocationVerifier();
+        registry = new IdentityRegistry(address(verifier), address(revocationVerifier), OPRF_PK_X, OPRF_PK_Y);
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
     }
 

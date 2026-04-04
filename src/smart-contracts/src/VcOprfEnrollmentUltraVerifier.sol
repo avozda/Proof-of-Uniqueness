@@ -1,7 +1,7 @@
 // Verification Key Hash: e987914bb97433adb37c4c6fef3772c981b0329149ed0ecdbad33cb21fe9cc15
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2022 Aztec
-pragma solidity =0.8.13;
+pragma solidity >=0.8.21;
 
 library UltraVerificationKey {
     function verificationKeyHash() internal pure returns(bytes32) {
