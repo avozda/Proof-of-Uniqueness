@@ -21,6 +21,10 @@ export default defineConfig({
     }),
   ],
   optimizeDeps: {
-    include: ["@noble/curves", "@noble/hashes", "circomlibjs"],
+    include: [
+      "@noble/curves",
+      "@noble/hashes",
+      "circomlibjs",
+    ],
   },
 });

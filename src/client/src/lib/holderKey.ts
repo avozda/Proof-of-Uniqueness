@@ -8,6 +8,7 @@ import {
 } from "./did";
 
 const HOLDER_BIND_DOMAIN = "holder-bjj-bind-subject:v1";
+const HOLDER_OPRF_AUTH_DOMAIN = "holder-bjj-oprf-auth:v1";
 const REVOKE_DOMAIN = "IdentityRegistry::Revoke:v2";
 
 export interface HolderKeyPair {
@@ -35,6 +36,19 @@ export function buildHolderBindingMessage(credentialSubjectId: string): bigint {
   return poseidonHash([
     stringToField(HOLDER_BIND_DOMAIN),
     stringToField(credentialSubjectId),
+  ]);
+}
+
+export function buildHolderOprfAuthMessage(
+  requestId: string,
+  blindedX: bigint,
+  blindedY: bigint,
+): bigint {
+  return poseidonHash([
+    stringToField(HOLDER_OPRF_AUTH_DOMAIN),
+    stringToField(requestId),
+    blindedX,
+    blindedY,
   ]);
 }
 
