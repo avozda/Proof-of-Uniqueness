@@ -16,5 +16,8 @@
     "circomlibjs": "^0.1.7",
     "multiformats": "^13.3.7",
     "poseidon-lite": "^0.3.0"
+  },
+  "devDependencies": {
+    "@aztec/bb.js": "^4.1.3"
   }
 }

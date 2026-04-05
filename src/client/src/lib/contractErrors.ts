@@ -11,11 +11,11 @@ const REVERT_SELECTOR_MESSAGES: Record<string, string> = {
     "Only the contract owner can perform this action. Connect the deployer wallet.",
   "0xd3c12856": "No identity record exists for this hash ID.",
   "0x0ce8eac5": "This identity credential has expired on-chain.",
-  "0x2ae1f41d": "The signed challenge block is in the future.",
-  "0xaa2bf635":
-    "The signed challenge is stale. Sign a fresh challenge and retry.",
-  "0x587f81e7":
-    "Revocation proof key does not match the enrolled holder public key.",
+  "0x7feb78f8": "Revocation proof was rejected by the on-chain verifier.",
+  "0x04f7ac42": "Revocation challenge block/hash is invalid for current chain state.",
+  "0xb1bbb042":
+    "Revocation challenge block is too old. Generate a fresh revocation proof.",
+  "0x6d518c60": "Revocation proof holder key does not match the enrolled identity.",
 };
 
 const ERROR_NAME_MESSAGES: Record<string, string> = {
@@ -25,9 +25,20 @@ const ERROR_NAME_MESSAGES: Record<string, string> = {
   NotOwner: REVERT_SELECTOR_MESSAGES["0x30cd7471"],
   IdentityNotFound: REVERT_SELECTOR_MESSAGES["0xd3c12856"],
   IdentityExpired: REVERT_SELECTOR_MESSAGES["0x0ce8eac5"],
-  ChallengeBlockInFuture: REVERT_SELECTOR_MESSAGES["0x2ae1f41d"],
-  StaleChallenge: REVERT_SELECTOR_MESSAGES["0xaa2bf635"],
-  RevocationKeyMismatch: REVERT_SELECTOR_MESSAGES["0x587f81e7"],
+  InvalidPublicSignalLength:
+    "Public signals length is invalid for this verifier.",
+  InvalidFieldElement:
+    "One or more public signals are outside the field modulus.",
+  InvalidOprfMetadata: "Invalid OPRF metadata (key id/epoch).",
+  UntrustedOprfPublicKey:
+    "Proof uses an OPRF public key that is not trusted by this contract.",
+  InvalidRevocationProof: "Revocation proof was rejected by the on-chain verifier.",
+  RevocationChallengeExpired:
+    "Revocation challenge block is too old. Generate a fresh revocation proof.",
+  InvalidChallengeBlock:
+    "Revocation challenge block/hash is invalid for current chain state.",
+  HolderKeyMismatch:
+    "Revocation proof holder key does not match the enrolled identity.",
 };
 
 function isHexData(value: unknown): value is `0x${string}` {
@@ -124,7 +135,7 @@ export function formatIdentityRegistryTxError(err: Error): string {
     typeof (err as { shortMessage?: string }).shortMessage === "string"
       ? (err as { shortMessage: string }).shortMessage
       : null;
-  let msg = short ?? err.message;
+  const msg = short ?? err.message;
 
   if (msg.includes("IssuerNotTrusted") || msg.includes("0x864f22fb")) {
     return REVERT_SELECTOR_MESSAGES["0x864f22fb"];
@@ -144,14 +155,38 @@ export function formatIdentityRegistryTxError(err: Error): string {
   if (msg.includes("IdentityExpired")) {
     return ERROR_NAME_MESSAGES.IdentityExpired;
   }
-  if (msg.includes("ChallengeBlockInFuture") || msg.includes("0x2ae1f41d")) {
-    return ERROR_NAME_MESSAGES.ChallengeBlockInFuture;
+  if (msg.includes("InvalidPublicSignalLength")) {
+    return ERROR_NAME_MESSAGES.InvalidPublicSignalLength;
   }
-  if (msg.includes("StaleChallenge") || msg.includes("0xaa2bf635")) {
-    return ERROR_NAME_MESSAGES.StaleChallenge;
+  if (msg.includes("InvalidFieldElement")) {
+    return ERROR_NAME_MESSAGES.InvalidFieldElement;
   }
-  if (msg.includes("RevocationKeyMismatch") || msg.includes("0x587f81e7")) {
-    return ERROR_NAME_MESSAGES.RevocationKeyMismatch;
+  if (msg.includes("InvalidOprfMetadata")) {
+    return ERROR_NAME_MESSAGES.InvalidOprfMetadata;
+  }
+  if (msg.includes("UntrustedOprfPublicKey")) {
+    return ERROR_NAME_MESSAGES.UntrustedOprfPublicKey;
+  }
+  if (msg.includes("InvalidRevocationProof")) {
+    return ERROR_NAME_MESSAGES.InvalidRevocationProof;
+  }
+  if (msg.includes("RevocationChallengeExpired")) {
+    return ERROR_NAME_MESSAGES.RevocationChallengeExpired;
+  }
+  if (msg.includes("InvalidChallengeBlock")) {
+    return ERROR_NAME_MESSAGES.InvalidChallengeBlock;
+  }
+  if (msg.includes("HolderKeyMismatch")) {
+    return ERROR_NAME_MESSAGES.HolderKeyMismatch;
+  }
+  if (msg.includes("InvalidPublicSignalLength")) {
+    return ERROR_NAME_MESSAGES.InvalidPublicSignalLength;
+  }
+  if (msg.includes("InvalidFieldElement")) {
+    return ERROR_NAME_MESSAGES.InvalidFieldElement;
+  }
+  if (msg.includes("InvalidOprfMetadata")) {
+    return ERROR_NAME_MESSAGES.InvalidOprfMetadata;
   }
 
   if (
@@ -173,8 +208,8 @@ export function formatIdentityRegistryTxError(err: Error): string {
       return code < 32 && c !== "\t";
     });
     const looksLikeSelectorUtf8 =
-      rawReason.length <= 6 && /[\u0000-\u001f]/.test(rawReason) === false
-        ? /^[\x21-\x7e.]+$/u.test(rawReason) &&
+      rawReason.length <= 6 && /^[\P{Cc}]*$/u.test(rawReason)
+        ? /^[!-.~]+$/u.test(rawReason) &&
           !/\s/.test(rawReason) &&
           rawReason.length < 12
         : ctrl;

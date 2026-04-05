@@ -1,15 +1,13 @@
 import { v4 as uuidv4 } from "uuid";
 import {
-  toHex,
   stringToField,
   dateToField,
   sexToField,
   createVCSignature,
   encodeProofValue,
   hashBytes,
-  vkToFieldElements,
 } from "./did";
-import type { DIDKeyPair } from "./did";
+import type { DIDKeyPair, EdDSAPublicKey } from "./did";
 
 export interface CredentialSubject {
   id: string;
@@ -22,19 +20,10 @@ export interface CredentialSubject {
     type: string;
     value: string;
   };
-  biometricTemplate: {
+  holderPublicKey: {
     type: string;
-    template: string;
-  };
-  biometricVerificationKey: {
-    type: string;
-    value: string;
-  };
-  holderBindingSignature: {
-    type: string;
-    r8x: string;
-    r8y: string;
-    s: string;
+    x: string;
+    y: string;
   };
 }
 
@@ -85,13 +74,7 @@ export function createVerifiableCredential(
   formData: FormData,
   issuer: DIDKeyPair,
   issuerName: string,
-  sketch: Uint8Array,
-  verificationKey: Uint8Array,
-  holderBindingSignature: {
-    r8x: bigint;
-    r8y: bigint;
-    s: bigint;
-  },
+  holderPublicKey: EdDSAPublicKey,
   credentialSubjectId?: string,
 ): VerifiableCredential {
   const now = new Date();
@@ -114,8 +97,10 @@ export function createVerifiableCredential(
   const validFromField = dateToField(now.toISOString());
   const validUntilField = dateToField(validUntil.toISOString());
   const issuerField = stringToField(issuer.did);
-  const sketchHashField = hashBytes(sketch);
-  const vkFields = vkToFieldElements(verificationKey);
+  const holderPubKeyFields: [bigint, bigint] = [
+    holderPublicKey.x,
+    holderPublicKey.y,
+  ];
 
   const signatureData = createVCSignature(issuer.privateKey, issuer.publicKey, {
     vcId: vcIdField,
@@ -129,8 +114,7 @@ export function createVerifiableCredential(
     validFrom: validFromField,
     issuer: issuerField,
     validUntil: validUntilField,
-    sketchHash: sketchHashField,
-    verificationKey: vkFields,
+    holderPublicKey: holderPubKeyFields,
   });
 
   const proofValue = encodeProofValue(
@@ -144,7 +128,7 @@ export function createVerifiableCredential(
       "https://w3id.org/security/data-integrity/v2",
     ],
     id: credentialId,
-    type: ["VerifiableCredential", "BiometricIdentityCredential"],
+    type: ["VerifiableCredential", "UniquenessIdentityCredential"],
     issuer: {
       id: issuer.did,
       name: issuerName,
@@ -162,19 +146,10 @@ export function createVerifiableCredential(
         type: "PoseidonHash",
         value: permanentAddressHashField.toString(),
       },
-      biometricTemplate: {
-        type: "FuzzySignatureTemplate",
-        template: toHex(sketch),
-      },
-      biometricVerificationKey: {
-        type: "FuzzyVerificationKey",
-        value: toHex(verificationKey),
-      },
-      holderBindingSignature: {
-        type: "BabyJubJubEdDSA-Poseidon",
-        r8x: holderBindingSignature.r8x.toString(),
-        r8y: holderBindingSignature.r8y.toString(),
-        s: holderBindingSignature.s.toString(),
+      holderPublicKey: {
+        type: "BabyJubJubPublicKey",
+        x: holderPublicKey.x.toString(),
+        y: holderPublicKey.y.toString(),
       },
     },
     proof: {

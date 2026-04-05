@@ -1,0 +1,14 @@
+# Compiler files
+cache/
+out/
+
+
+# Docs
+docs/
+
+# Dotenv file
+.env
+
+soljson-latest.js
+broadcast/
+.ignore

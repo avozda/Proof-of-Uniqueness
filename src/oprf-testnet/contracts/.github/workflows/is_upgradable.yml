@@ -1,0 +1,41 @@
+name: Proxy Upgrade Checks
+
+permissions: {}
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  validate:
+    name: OpenZeppelin Upgrade Validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Setup Node.js (includes npx)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Show Node and npx versions
+        run: |
+          node --version
+          npx --version
+
+      - name: Build contracts
+        run: forge clean && forge install && forge build
+
+      - name: Run OpenZeppelin upgrades validation
+        run: npx @openzeppelin/upgrades-core validate --unsafeAllowLinkedLibraries --exclude "**/*.t.sol"
+

@@ -1,70 +1,77 @@
-import { useState, useEffect, useMemo } from "react";
+import { useEffect, useState } from "react";
 import {
   useAccount,
   useConnect,
   useDisconnect,
   useReadContract,
-  useWriteContract,
   useWaitForTransactionReceipt,
-  usePublicClient,
+  useWriteContract,
 } from "wagmi";
 import { injected } from "wagmi/connectors";
-import {
-  generateProof,
-  verifyProof,
-  parsePublicSignals,
-  generateRevocationProof,
-  verifyRevocationProof,
-} from "../lib/proof";
-import type { ZKProof, ProofOutputs, RevocationProof } from "../lib/proof";
+
 import type { VerifiableCredential } from "../lib/vc";
-import type { MockBiometricData } from "../lib/biometrics";
+import type { HolderKeyPair } from "../lib/holderKey";
 import { identityRegistryAbi } from "../lib/contractAbi";
 import { formatIdentityRegistryTxError } from "../lib/contractErrors";
-import { CONTRACT_ADDRESSES, setContractAddress } from "../lib/wagmi";
+import { CONTRACT_ADDRESSES } from "../lib/wagmi";
+import {
+  buildVcOprfEnrollmentProofPackage,
+  buildVcRevocationProofPackage,
+  type OprfNetworkConfig,
+  type VcOprfEnrollmentProofPackage,
+} from "../lib/oprfEnrollment";
 
 interface ZKProofSectionProps {
   credential: VerifiableCredential;
   issuerPublicKey: { x: bigint; y: bigint };
-  biometricData: MockBiometricData;
+  holderKeyPair: HolderKeyPair;
 }
 
 export function ZKProofSection({
   credential,
   issuerPublicKey,
-  biometricData,
+  holderKeyPair,
 }: ZKProofSectionProps) {
-  const [zkProof, setZkProof] = useState<ZKProof | null>(null);
-  const [proofOutputs, setProofOutputs] = useState<ProofOutputs | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [proofVerified, setProofVerified] = useState<boolean | null>(null);
+  const [isEnrolling, setIsEnrolling] = useState(false);
   const [proofError, setProofError] = useState<string | null>(null);
-  const [contractAddress, setContractAddressInput] = useState(
-    CONTRACT_ADDRESSES.identityRegistry,
-  );
-  const [revokeHashIdInput, setRevokeHashIdInput] = useState("");
-  const [revokeError, setRevokeError] = useState<string | null>(null);
-  const [revokeProof, setRevokeProof] = useState<RevocationProof | null>(null);
-  const [revokeProofVerified, setRevokeProofVerified] = useState<boolean | null>(null);
-  const publicClient = usePublicClient();
+  const [generationStatus, setGenerationStatus] = useState<string | null>(null);
+  const [proofPackage, setProofPackage] =
+    useState<VcOprfEnrollmentProofPackage | null>(null);
+  const [isRevoking, setIsRevoking] = useState(false);
+  const [revocationStatus, setRevocationStatus] = useState<string | null>(null);
 
-  const parsedRevokeHashId = /^\d+$/.test(revokeHashIdInput)
-    ? BigInt(revokeHashIdInput)
-    : null;
+  const contractAddress = CONTRACT_ADDRESSES.identityRegistry;
+  const networkConfig: OprfNetworkConfig = {
+    nodeBases: ["http://127.0.0.1:10000", "http://127.0.0.1:10001", "http://127.0.0.1:10002"],
+    threshold: 2,
+    apiKey: "test",
+    authModule: "vc-ownership",
+  };
 
-  // Wagmi hooks
+  const contractAddressValid =
+    /^0x[a-fA-F0-9]{40}$/.test(contractAddress) &&
+    contractAddress !== "0x0000000000000000000000000000000000000000";
+
   const { address, isConnected } = useAccount();
   const { connect, isPending: isConnecting } = useConnect();
   const { disconnect } = useDisconnect();
+
   const {
     writeContract,
     data: txHash,
     isPending: isSubmitting,
     error: submitError,
     reset: resetSubmit,
-  } = useWriteContract({
-    mutation: { retry: false },
-  });
+  } = useWriteContract({ mutation: { retry: false } });
+
+  const {
+    writeContract: writeRevokeContract,
+    data: revokeTxHash,
+    isPending: isRevocationSubmitting,
+    error: revokeSubmitError,
+    reset: resetRevokeSubmit,
+  } = useWriteContract({ mutation: { retry: false } });
 
   const {
     writeContract: writeIssuerTx,
@@ -72,9 +79,7 @@ export function ZKProofSection({
     isPending: isIssuerSubmitting,
     error: issuerSubmitError,
     reset: resetIssuerSubmit,
-  } = useWriteContract({
-    mutation: { retry: false },
-  });
+  } = useWriteContract({ mutation: { retry: false } });
 
   const {
     data: receipt,
@@ -82,10 +87,15 @@ export function ZKProofSection({
     isSuccess: receiptReady,
     isError: receiptWaitFailed,
     error: receiptWaitError,
-  } = useWaitForTransactionReceipt({
-    hash: txHash,
-    query: { retry: false },
-  });
+  } = useWaitForTransactionReceipt({ hash: txHash, query: { retry: false } });
+
+  const {
+    data: revokeReceipt,
+    isLoading: isRevokeConfirming,
+    isSuccess: revokeReceiptReady,
+    isError: revokeReceiptWaitFailed,
+    error: revokeReceiptWaitError,
+  } = useWaitForTransactionReceipt({ hash: revokeTxHash, query: { retry: false } });
 
   const {
     data: issuerReceipt,
@@ -98,14 +108,9 @@ export function ZKProofSection({
     query: { retry: false },
   });
 
-  const contractAddressValid =
-    /^0x[a-fA-F0-9]{40}$/.test(contractAddress) &&
-    contractAddress !== "0x0000000000000000000000000000000000000000";
-
   const {
     data: issuerTrusted,
     isFetching: issuerTrustLoading,
-    refetch: refetchIssuerTrust,
   } = useReadContract({
     address: contractAddressValid ? contractAddress : undefined,
     abi: identityRegistryAbi,
@@ -117,236 +122,109 @@ export function ZKProofSection({
     },
   });
 
-  const {
-    data: enrollmentVerifierAddress,
-    refetch: refetchEnrollmentVerifierAddress,
-  } = useReadContract({
-    address: contractAddressValid ? contractAddress : undefined,
-    abi: identityRegistryAbi,
-    functionName: "enrollmentVerifier",
-    query: {
-      enabled: Boolean(isConnected && contractAddressValid),
-      retry: false,
-    },
-  });
-
-  const {
-    writeContract: writeRevokeTx,
-    data: revokeTxHash,
-    isPending: isRevoking,
-    error: revokeSubmitError,
-    reset: resetRevokeSubmit,
-  } = useWriteContract({
-    mutation: { retry: false },
-  });
-
-  const {
-    data: revokeReceipt,
-    isLoading: isRevokeConfirming,
-    isSuccess: revokeReceiptReady,
-    isError: revokeReceiptWaitFailed,
-    error: revokeReceiptWaitError,
-  } = useWaitForTransactionReceipt({
-    hash: revokeTxHash,
-    query: { retry: false },
-  });
-
-  // viem only maps status for exact "0x0"/"0x1"; some RPCs return variants so status can be
-  // undefined even when the tx reverted — treat any non-success receipt as failure.
-  const txFailedOnChain =
-    Boolean(txHash) &&
-    receiptReady &&
-    receipt != null &&
-    receipt.status !== "success";
-
-  const isEnrolledOnChain =
-    receiptReady && receipt != null && receipt.status === "success";
-
-  const txOutcomeSettled = Boolean(txHash) && !isSubmitting && !isConfirming;
-
-  const displayTxError =
-    submitError != null
-      ? formatIdentityRegistryTxError(submitError)
-      : txOutcomeSettled && receiptWaitFailed
-        ? receiptWaitError instanceof Error
-          ? formatIdentityRegistryTxError(receiptWaitError)
-          : String(receiptWaitError)
-        : txOutcomeSettled && txFailedOnChain
-          ? receipt?.status === "reverted"
-            ? "Transaction reverted on-chain."
-            : "Transaction was mined but did not succeed (reverted, or receipt status missing / not recognized by the client)."
-          : null;
-
-  const issuerTxFailedOnChain =
-    Boolean(issuerTxHash) &&
-    issuerReceiptReady &&
-    issuerReceipt != null &&
-    issuerReceipt.status !== "success";
-
-  const issuerRegisteredOnChain =
-    issuerReceiptReady &&
-    issuerReceipt != null &&
-    issuerReceipt.status === "success";
-
-  const issuerTxOutcomeSettled =
-    Boolean(issuerTxHash) && !isIssuerSubmitting && !isIssuerConfirming;
-
-  const displayIssuerTxError =
-    issuerSubmitError != null
-      ? formatIdentityRegistryTxError(issuerSubmitError)
-      : issuerTxOutcomeSettled && issuerReceiptWaitFailed
-        ? issuerReceiptWaitError instanceof Error
-          ? formatIdentityRegistryTxError(issuerReceiptWaitError)
-          : String(issuerReceiptWaitError)
-        : issuerTxOutcomeSettled && issuerTxFailedOnChain
-          ? issuerReceipt?.status === "reverted"
-            ? "Transaction reverted on-chain."
-            : "Transaction was mined but did not succeed (reverted, or receipt status missing / not recognized by the client)."
-          : null;
-
-  useEffect(() => {
-    if (issuerRegisteredOnChain) void refetchIssuerTrust();
-  }, [issuerRegisteredOnChain, refetchIssuerTrust]);
-
   const handleGenerateProof = async () => {
     setIsGenerating(true);
     setProofError(null);
-    setZkProof(null);
-    setProofOutputs(null);
-    setProofVerified(null);
+    setGenerationStatus("Preparing VC and OPRF request...");
+    setProofPackage(null);
     resetSubmit();
     resetIssuerSubmit();
 
     try {
-      const proof = await generateProof(credential);
-      setZkProof(proof);
-
-      const outputs = parsePublicSignals(proof.publicSignals);
-      setProofOutputs(outputs);
-      setRevokeHashIdInput(outputs.hashID);
-
-      const isValid = await verifyProof(proof);
-      setProofVerified(isValid);
-    } catch (err) {
-      console.error("Error generating proof:", err);
-      setProofError(
-        err instanceof Error ? err.message : "Unknown error generating proof",
+      const built = await buildVcOprfEnrollmentProofPackage(
+        credential,
+        issuerPublicKey,
+        holderKeyPair,
+        networkConfig,
+        (message) => setGenerationStatus(message),
       );
+      setProofPackage(built);
+      setGenerationStatus("OPRF package generated successfully.");
+    } catch (err) {
+      setProofError(
+        err instanceof Error ? err.message : "Unknown error generating proof package",
+      );
+      setGenerationStatus(null);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const revokeTxFailedOnChain =
-    Boolean(revokeTxHash) &&
-    revokeReceiptReady &&
-    revokeReceipt != null &&
-    revokeReceipt.status !== "success";
-
-  const revokeTxOutcomeSettled =
-    Boolean(revokeTxHash) && !isRevoking && !isRevokeConfirming;
-
-  const displayRevokeTxError =
-    revokeSubmitError != null
-      ? formatIdentityRegistryTxError(revokeSubmitError)
-      : revokeTxOutcomeSettled && revokeReceiptWaitFailed
-        ? revokeReceiptWaitError instanceof Error
-          ? formatIdentityRegistryTxError(revokeReceiptWaitError)
-          : String(revokeReceiptWaitError)
-        : revokeTxOutcomeSettled && revokeTxFailedOnChain
-          ? revokeReceipt?.status === "reverted"
-            ? "Transaction reverted on-chain."
-            : "Transaction was mined but did not succeed (reverted, or receipt status missing / not recognized by the client)."
-          : null;
-
-  const revokeSucceeded =
-    revokeReceiptReady && revokeReceipt != null && revokeReceipt.status === "success";
-
   const handleRevokeIdentity = async () => {
-    if (!contractAddressValid) {
-      setRevokeError("Enter a valid contract address.");
-      return;
-    }
-    if (!revokeHashIdInput) {
-      setRevokeError("Enter a hash ID to revoke.");
-      return;
-    }
-    if (parsedRevokeHashId == null) {
-      setRevokeError("Hash ID must be a decimal uint256 value.");
-      return;
-    }
-
-    setRevokeError(null);
+    if (!proofPackage || !contractAddressValid) return;
+    setIsRevoking(true);
+    setRevocationStatus("Fetching latest challenge block...");
+    setProofError(null);
+    resetRevokeSubmit();
 
     try {
-      const hashID = parsedRevokeHashId;
-      if (!publicClient) {
-        throw new Error("Public client is not ready.");
-      }
-
-      const identityRecord = (await publicClient.readContract({
-        address: contractAddress,
-        abi: identityRegistryAbi,
-        functionName: "identities",
-        args: [hashID],
-      })) as readonly [bigint, bigint, bigint, bigint, bigint, boolean];
-      if (!identityRecord?.[5]) {
-        throw new Error(
-          `No enrollment found for hashID ${hashID.toString()} on contract ${contractAddress}.`,
-        );
-      }
-
-      const challengeBlock = await publicClient.getBlockNumber();
-      const walletChainId = await publicClient.getChainId();
-
-      const revokeZkProof = await generateRevocationProof(
-        biometricData,
-        contractAddress,
-        BigInt(walletChainId),
-        hashID,
-        challengeBlock,
-      );
-      setRevokeProof(revokeZkProof);
-
-      const localValid = await verifyRevocationProof(revokeZkProof);
-      setRevokeProofVerified(localValid);
-      if (!localValid) {
-        throw new Error("Generated revocation proof failed local verification.");
-      }
-
-      const proof = revokeZkProof.proof;
-      const pA: [bigint, bigint] = [BigInt(proof.pi_a[0]), BigInt(proof.pi_a[1])];
-      const pB: [[bigint, bigint], [bigint, bigint]] = [
-        [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
-        [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])],
-      ];
-      const pC: [bigint, bigint] = [BigInt(proof.pi_c[0]), BigInt(proof.pi_c[1])];
-      const pubSignals: readonly [bigint, bigint, bigint, bigint] = [
-        BigInt(revokeZkProof.publicSignals[0]),
-        BigInt(revokeZkProof.publicSignals[1]),
-        BigInt(revokeZkProof.publicSignals[2]),
-        BigInt(revokeZkProof.publicSignals[3]),
-      ];
-
-      resetRevokeSubmit();
-      writeRevokeTx({
-        address: contractAddress,
-        abi: identityRegistryAbi,
-        functionName: "revokeIdentityWithProof",
-        args: [pA, pB, pC, pubSignals],
+      const blockNumberResp = await fetch("http://127.0.0.1:8545", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "eth_blockNumber",
+          params: [],
+        }),
       });
-    } catch (err) {
-      setRevokeError(err instanceof Error ? err.message : "Revocation failed.");
-    }
-  };
+      const blockNumberJson = (await blockNumberResp.json()) as {
+        result?: string;
+      };
+      if (!blockNumberJson.result) throw new Error("Failed to read latest block number");
+      const latest = BigInt(blockNumberJson.result);
+      if (latest <= 1n) throw new Error("Chain has insufficient blocks for challenge");
+      const challengeBlock = latest - 1n;
 
-  const handleConnectWallet = () => {
-    connect({ connector: injected() });
+      setRevocationStatus("Fetching challenge block hash...");
+      const blockResp = await fetch("http://127.0.0.1:8545", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 2,
+          method: "eth_getBlockByNumber",
+          params: [`0x${challengeBlock.toString(16)}`, false],
+        }),
+      });
+      const blockJson = (await blockResp.json()) as {
+        result?: { hash?: string };
+      };
+      const blockHashHex = blockJson.result?.hash;
+      if (!blockHashHex || !/^0x[0-9a-fA-F]{64}$/.test(blockHashHex)) {
+        throw new Error("Failed to fetch challenge block hash");
+      }
+      const FIELD_MODULUS =
+        21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+      const challengeHashField = BigInt(blockHashHex) % FIELD_MODULUS;
+
+      const pkg = await buildVcRevocationProofPackage(
+        BigInt(proofPackage.decoded.nullifier),
+        holderKeyPair,
+        challengeHashField,
+        challengeBlock,
+        (message) => setRevocationStatus(message),
+      );
+
+      setRevocationStatus("Submitting revocation transaction...");
+      writeRevokeContract({
+        address: contractAddress,
+        abi: identityRegistryAbi,
+        functionName: "revoke",
+        args: [pkg.proof, pkg.publicSignals, pkg.challengeBlockNumber],
+      });
+      setRevocationStatus("Revocation transaction submitted. Waiting for confirmation...");
+      setIsRevoking(false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown revocation error";
+      setProofError(msg);
+      setRevocationStatus(`Revocation failed: ${msg}`);
+      setIsRevoking(false);
+    }
   };
 
   const handleRegisterIssuerOnChain = () => {
     if (!contractAddressValid) return;
-    setContractAddress(contractAddress);
     resetIssuerSubmit();
     writeIssuerTx({
       address: contractAddress,
@@ -356,108 +234,112 @@ export function ZKProofSection({
     });
   };
 
-  const handleSubmitToContract = async () => {
-    if (!zkProof || !proofVerified) return;
-
-    setContractAddress(contractAddress);
-
+  const handleSubmitToContract = () => {
+    if (!proofPackage) return;
     if (!contractAddressValid) {
-      setProofError("Enter a valid contract address.");
+      setProofError("IdentityRegistry address is not configured correctly.");
       return;
     }
-
-    if (!publicClient) {
-      setProofError("Public client is not ready.");
-      return;
-    }
-
-    const onchainEnrollmentVerifier =
-      enrollmentVerifierAddress ?? (await refetchEnrollmentVerifierAddress()).data;
-    if (typeof onchainEnrollmentVerifier !== "string") {
-      setProofError(
-        "Connected contract does not expose enrollmentVerifier(). Redeploy the new IdentityRegistry version.",
-      );
-      return;
-    }
-
-    if (
-      onchainEnrollmentVerifier.toLowerCase() ===
-      "0x0000000000000000000000000000000000000000"
-    ) {
-      setProofError("Contract enrollment verifier is not configured.");
-      return;
-    }
-
-    const proof = zkProof.proof;
-    const publicSignals = zkProof.publicSignals;
-    const hashIDToEnroll = BigInt(publicSignals[0]);
-
-    const existingRecord = (await publicClient.readContract({
-      address: contractAddress,
-      abi: identityRegistryAbi,
-      functionName: "identities",
-      args: [hashIDToEnroll],
-    })) as readonly [bigint, bigint, bigint, bigint, bigint, boolean];
-    if (existingRecord?.[5]) {
-      setProofError(
-        `HashID ${hashIDToEnroll.toString()} is already enrolled on ${contractAddress}.`,
-      );
-      return;
-    }
-
-    // Format proof for Solidity verifier (swap pi_b coordinate order)
-    const pA: [bigint, bigint] = [BigInt(proof.pi_a[0]), BigInt(proof.pi_a[1])];
-    const pB: [[bigint, bigint], [bigint, bigint]] = [
-      [BigInt(proof.pi_b[0][1]), BigInt(proof.pi_b[0][0])],
-      [BigInt(proof.pi_b[1][1]), BigInt(proof.pi_b[1][0])],
-    ];
-    const pC: [bigint, bigint] = [BigInt(proof.pi_c[0]), BigInt(proof.pi_c[1])];
-
-    const pubSignals: readonly [
-      bigint,
-      bigint,
-      bigint,
-      bigint,
-      bigint,
-      bigint,
-      bigint,
-      bigint,
-    ] = [
-      BigInt(publicSignals[0]),
-      BigInt(publicSignals[1]),
-      BigInt(publicSignals[2]),
-      BigInt(publicSignals[3]),
-      BigInt(publicSignals[4]),
-      BigInt(publicSignals[5]),
-      BigInt(publicSignals[6]),
-      BigInt(publicSignals[7]),
-    ];
 
     resetSubmit();
+    setIsEnrolling(true);
     writeContract({
       address: contractAddress,
       abi: identityRegistryAbi,
       functionName: "enroll",
-      args: [pA, pB, pC, pubSignals],
+      args: [proofPackage.proof, proofPackage.publicSignals],
     });
   };
 
-  const handleAddressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setContractAddressInput(e.target.value as `0x${string}`);
-  };
+  const txFailedOnChain =
+    Boolean(txHash) && receiptReady && receipt != null && receipt.status !== "success";
+  const txSucceededOnChain =
+    Boolean(txHash) && receiptReady && receipt != null && receipt.status === "success";
+  const txOutcomeSettled = Boolean(txHash) && !isSubmitting && !isConfirming;
+  const displayTxError =
+    submitError != null
+      ? formatIdentityRegistryTxError(submitError)
+      : txOutcomeSettled && receiptWaitFailed
+        ? receiptWaitError instanceof Error
+          ? formatIdentityRegistryTxError(receiptWaitError)
+          : String(receiptWaitError)
+        : txOutcomeSettled && txFailedOnChain
+          ? "Transaction was mined but did not succeed (reverted or missing status)."
+          : null;
 
-  const maxRevokeBlockAge = useMemo(() => 20, []);
+  const revokeTxFailedOnChain =
+    Boolean(revokeTxHash) &&
+    revokeReceiptReady &&
+    revokeReceipt != null &&
+    revokeReceipt.status !== "success";
+  const revokeTxSucceededOnChain =
+    Boolean(revokeTxHash) &&
+    revokeReceiptReady &&
+    revokeReceipt != null &&
+    revokeReceipt.status === "success";
+  const revokeTxOutcomeSettled =
+    Boolean(revokeTxHash) && !isRevocationSubmitting && !isRevokeConfirming;
+  const displayRevokeTxError =
+    revokeSubmitError != null
+      ? formatIdentityRegistryTxError(revokeSubmitError)
+      : revokeTxOutcomeSettled && revokeReceiptWaitFailed
+        ? revokeReceiptWaitError instanceof Error
+          ? formatIdentityRegistryTxError(revokeReceiptWaitError)
+          : String(revokeReceiptWaitError)
+        : revokeTxOutcomeSettled && revokeTxFailedOnChain
+          ? "Revocation transaction was mined but did not succeed."
+          : null;
+
+  const revokePhaseActive = isRevoking || isRevocationSubmitting || isRevokeConfirming;
+
+  useEffect(() => {
+    if (!isEnrolling) return;
+    if (submitError || txOutcomeSettled) {
+      setIsEnrolling(false);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setIsEnrolling(false);
+      setProofError(
+        "Enrollment is taking longer than expected. Check wallet and chain status, then retry.",
+      );
+    }, 25000);
+    return () => clearTimeout(timeout);
+  }, [isEnrolling, submitError, txOutcomeSettled]);
+
+  const issuerTxFailedOnChain =
+    Boolean(issuerTxHash) &&
+    issuerReceiptReady &&
+    issuerReceipt != null &&
+    issuerReceipt.status !== "success";
+  const issuerTxOutcomeSettled =
+    Boolean(issuerTxHash) && !isIssuerSubmitting && !isIssuerConfirming;
+  const displayIssuerTxError =
+    issuerSubmitError != null
+      ? formatIdentityRegistryTxError(issuerSubmitError)
+      : issuerTxOutcomeSettled && issuerReceiptWaitFailed
+        ? issuerReceiptWaitError instanceof Error
+          ? formatIdentityRegistryTxError(issuerReceiptWaitError)
+          : String(issuerReceiptWaitError)
+        : issuerTxOutcomeSettled && issuerTxFailedOnChain
+          ? "Issuer registration transaction failed on-chain."
+          : null;
 
   return (
     <div className="proof-section">
       <h3>
         <span className="proof-icon">🔐</span>
-        Zero-Knowledge Proof
+        OPRF Enrollment Proof
       </h3>
       <p className="proof-description">
-        Generate a ZK proof to verify your credential without revealing private
-        data.
+        Generate VC+OPRF enrollment payload and submit it to the on-chain verifier.
       </p>
+
+      <div className="proof-data">
+        <p className="proof-description">
+          Browser flow is locked to vc-ownership auth and strict proving.
+        </p>
+      </div>
 
       <button
         className="proof-button"
@@ -468,12 +350,12 @@ export function ZKProofSection({
         {isGenerating ? (
           <>
             <span className="spinner" />
-            Generating Proof...
+            Generating OPRF package...
           </>
         ) : (
           <>
             <span className="btn-icon">🛡️</span>
-            Generate ZK Proof
+            Generate OPRF Enrollment Package
           </>
         )}
       </button>
@@ -484,48 +366,47 @@ export function ZKProofSection({
         </div>
       )}
 
-      {zkProof && proofOutputs && (
+      {isGenerating && generationStatus && (
+        <div className="proof-data" role="status" aria-live="polite">
+          <p className="proof-description">{generationStatus}</p>
+        </div>
+      )}
+
+      {proofPackage && (
         <div className="proof-result">
           <div className="proof-status">
-            {proofVerified === true && (
-              <span className="proof-verified">✓ Proof Verified</span>
-            )}
-            {proofVerified === false && (
-              <span className="proof-invalid">✗ Proof Invalid</span>
-            )}
+            <span className="proof-verified">✓ Package Ready</span>
           </div>
 
           <div className="proof-outputs">
             <h4>Public Outputs</h4>
             <div className="output-grid">
               <div className="output-item">
-                <span className="output-label">Hash ID</span>
-                <code>{proofOutputs.hashID}</code>
-              </div>
-              <div className="output-item">
-                <span className="output-label">Issuer</span>
-                <code>{proofOutputs.outIssuer}</code>
+                <span className="output-label">Nullifier</span>
+                <code>{proofPackage.decoded.nullifier}</code>
               </div>
               <div className="output-item">
                 <span className="output-label">Valid Until</span>
-                <code>{proofOutputs.outValidUntil}</code>
+                <code>{proofPackage.decoded.validUntil}</code>
               </div>
               <div className="output-item">
-                <span className="output-label">Sketch Hash</span>
-                <code>{proofOutputs.outSketchHash}</code>
-              </div>
-              <div className="output-item">
-                <span className="output-label">Verification Key</span>
+                <span className="output-label">Holder Public Key</span>
                 <code>
-                  [{proofOutputs.outVerificationKey[0].slice(0, 20)}...,{" "}
-                  {proofOutputs.outVerificationKey[1].slice(0, 20)}...]
+                  [{proofPackage.decoded.holderPubKeyX.slice(0, 20)}...,{" "}
+                  {proofPackage.decoded.holderPubKeyY.slice(0, 20)}...]
                 </code>
               </div>
               <div className="output-item">
-                <span className="output-label">Signer Public Key</span>
+                <span className="output-label">Issuer Public Key</span>
                 <code>
-                  [{proofOutputs.outSignerPubKey[0].slice(0, 20)}...,{" "}
-                  {proofOutputs.outSignerPubKey[1].slice(0, 20)}...]
+                  [{proofPackage.decoded.issuerPubKeyX.slice(0, 20)}...,{" "}
+                  {proofPackage.decoded.issuerPubKeyY.slice(0, 20)}...]
+                </code>
+              </div>
+              <div className="output-item">
+                <span className="output-label">OPRF Key / Epoch</span>
+                <code>
+                  {proofPackage.decoded.oprfKeyId} / {proofPackage.decoded.oprfEpoch}
                 </code>
               </div>
             </div>
@@ -537,22 +418,10 @@ export function ZKProofSection({
               Submit to Smart Contract
             </h4>
 
-            <div className="contract-address-input">
-              <label htmlFor="contractAddress">Contract Address:</label>
-              <input
-                id="contractAddress"
-                type="text"
-                value={contractAddress}
-                onChange={handleAddressChange}
-                placeholder="0x..."
-                className="address-input"
-              />
-            </div>
-
             {!isConnected ? (
               <button
                 className="wallet-button connect"
-                onClick={handleConnectWallet}
+                onClick={() => connect({ connector: injected() })}
                 disabled={isConnecting}
                 type="button"
               >
@@ -585,16 +454,11 @@ export function ZKProofSection({
 
                 <div className="issuer-onchain-block">
                   <p className="issuer-onchain-hint">
-                    The contract only accepts enrollments from trusted issuers.
-                    Register this app&apos;s issuer key (your DID) before
-                    enrolling. You must use the contract owner account (same as
-                    deployer).
+                    Contract only accepts trusted issuers. Register this issuer key first.
                   </p>
                   <div className="issuer-trust-row">
                     {issuerTrustLoading ? (
-                      <span className="issuer-trust-status">
-                        Checking issuer on-chain…
-                      </span>
+                      <span className="issuer-trust-status">Checking issuer on-chain…</span>
                     ) : issuerTrusted ? (
                       <span className="issuer-trust-badge trusted">
                         ✓ Issuer trusted for this contract
@@ -605,10 +469,11 @@ export function ZKProofSection({
                       </span>
                     ) : (
                       <span className="issuer-trust-badge untrusted">
-                        Enter a valid contract address to check issuer status
+                        IdentityRegistry address is not configured correctly
                       </span>
                     )}
                   </div>
+
                   <button
                     type="button"
                     className="issuer-register-button"
@@ -642,23 +507,11 @@ export function ZKProofSection({
                       </>
                     )}
                   </button>
+
                   {displayIssuerTxError != null && (
                     <div className="tx-error issuer-tx-error" role="alert">
                       <span className="tx-error-icon">❌</span>
-                      <span className="tx-error-text">
-                        {displayIssuerTxError}
-                      </span>
-                    </div>
-                  )}
-                  {issuerTxHash && (
-                    <div className="tx-info issuer-tx-info">
-                      <span className="tx-label">Issuer registration tx:</span>
-                      <code className="tx-hash">{issuerTxHash}</code>
-                    </div>
-                  )}
-                  {issuerRegisteredOnChain && (
-                    <div className="tx-success issuer-tx-success">
-                      <span>✅</span> Issuer registered successfully.
+                      <span className="tx-error-text">{displayIssuerTxError}</span>
                     </div>
                   )}
                 </div>
@@ -667,25 +520,17 @@ export function ZKProofSection({
                   className="submit-button"
                   onClick={handleSubmitToContract}
                   disabled={
-                    isSubmitting ||
-                    isConfirming ||
+                    isEnrolling ||
                     isIssuerSubmitting ||
                     isIssuerConfirming ||
-                    !proofVerified ||
-                    contractAddress ===
-                      "0x0000000000000000000000000000000000000000"
+                    !contractAddressValid
                   }
                   type="button"
                 >
-                  {isSubmitting ? (
+                  {isEnrolling ? (
                     <>
                       <span className="spinner" />
-                      Submitting...
-                    </>
-                  ) : isConfirming ? (
-                    <>
-                      <span className="spinner" />
-                      Confirming...
+                      {txHash ? "Confirming..." : "Submitting..."}
                     </>
                   ) : (
                     <>
@@ -695,10 +540,73 @@ export function ZKProofSection({
                   )}
                 </button>
 
+                <button
+                  className="submit-button"
+                  onClick={handleRevokeIdentity}
+                  disabled={
+                    isRevoking ||
+                    isRevocationSubmitting ||
+                    isRevokeConfirming ||
+                    isSubmitting ||
+                    isConfirming ||
+                    !contractAddressValid
+                  }
+                  type="button"
+                >
+                  {isRevoking || isRevocationSubmitting ? (
+                    <>
+                      <span className="spinner" />
+                      Revoking...
+                    </>
+                  ) : isRevokeConfirming ? (
+                    <>
+                      <span className="spinner" />
+                      Confirming revocation...
+                    </>
+                  ) : (
+                    <>
+                      <span className="btn-icon">🗑️</span>
+                      Revoke Identity
+                    </>
+                  )}
+                </button>
+
+                {revokePhaseActive && revocationStatus && (
+                  <div className="proof-data" role="status" aria-live="polite">
+                    <p className="proof-description">{revocationStatus}</p>
+                  </div>
+                )}
+
+                {displayRevokeTxError != null && (
+                  <div className="tx-error" role="alert">
+                    <span className="tx-error-icon">❌</span>
+                    <span className="tx-error-text">{displayRevokeTxError}</span>
+                  </div>
+                )}
+
+                {revokeTxSucceededOnChain && (
+                  <div className="proof-status" role="status">
+                    <span className="proof-verified">✓ Identity revoked on-chain</span>
+                  </div>
+                )}
+
+                {revokeTxHash && (
+                  <div className="tx-info">
+                    <span className="tx-label">Revocation Tx:</span>
+                    <code className="tx-hash">{revokeTxHash}</code>
+                  </div>
+                )}
+
                 {displayTxError != null && (
                   <div className="tx-error" role="alert">
                     <span className="tx-error-icon">❌</span>
                     <span className="tx-error-text">{displayTxError}</span>
+                  </div>
+                )}
+
+                {txSucceededOnChain && (
+                  <div className="proof-status" role="status">
+                    <span className="proof-verified">✓ Identity enrolled on-chain</span>
                   </div>
                 )}
 
@@ -708,120 +616,15 @@ export function ZKProofSection({
                     <code className="tx-hash">{txHash}</code>
                   </div>
                 )}
-
-                {isEnrolledOnChain && (
-                  <div className="tx-success">
-                    <span>✅</span> Identity successfully enrolled on-chain!
-                  </div>
-                )}
-
-                {isEnrolledOnChain && (
-                  <>
-                    <div className="revoke-block">
-                      <h5>Revoke Enrollment</h5>
-                      <p>
-                        Unlock your sketch, sign a fresh block challenge, and remove
-                        this identity from the registry.
-                      </p>
-                      <p className="meta-note">
-                        Freshness window: signed block must be within last {maxRevokeBlockAge} blocks.
-                      </p>
-                      <div className="contract-address-input">
-                        <label htmlFor="revokeHashId">Hash ID to revoke:</label>
-                        <input
-                          id="revokeHashId"
-                          type="text"
-                          value={revokeHashIdInput}
-                          onChange={(e) => setRevokeHashIdInput(e.target.value)}
-                          placeholder="123456..."
-                          className="address-input"
-                        />
-                      </div>
-                      <button
-                        className="submit-button revoke-button"
-                        onClick={handleRevokeIdentity}
-                        disabled={
-                          isRevoking ||
-                          isRevokeConfirming ||
-                          parsedRevokeHashId == null
-                        }
-                        type="button"
-                      >
-                        {isRevoking ? (
-                          <>
-                            <span className="spinner" />
-                            Submitting revoke...
-                          </>
-                        ) : isRevokeConfirming ? (
-                          <>
-                            <span className="spinner" />
-                            Confirming revoke...
-                          </>
-                        ) : (
-                          <>
-                            <span className="btn-icon">🗑️</span>
-                            Revoke Identity On-Chain
-                          </>
-                        )}
-                      </button>
-                      {revokeError && (
-                        <div className="tx-error" role="alert">
-                          <span className="tx-error-icon">❌</span>
-                          <span className="tx-error-text">{revokeError}</span>
-                        </div>
-                      )}
-                      {displayRevokeTxError != null && (
-                        <div className="tx-error" role="alert">
-                          <span className="tx-error-icon">❌</span>
-                          <span className="tx-error-text">{displayRevokeTxError}</span>
-                        </div>
-                      )}
-                      {revokeTxHash && (
-                        <div className="tx-info">
-                          <span className="tx-label">Revoke transaction:</span>
-                          <code className="tx-hash">{revokeTxHash}</code>
-                        </div>
-                      )}
-                      {revokeSucceeded && (
-                        <div className="tx-success">
-                          <span>✅</span> Identity revoked successfully.
-                        </div>
-                      )}
-                    </div>
-
-                    {revokeProof && (
-                      <div className="tx-info">
-                        <span className="tx-label">Revocation proof public signals:</span>
-                        <code className="tx-hash">[{revokeProof.publicSignals.join(", ")}]</code>
-                        <span className="tx-label">Local proof check:</span>
-                        <code className="tx-hash">
-                          {revokeProofVerified === true
-                            ? "valid"
-                            : revokeProofVerified === false
-                              ? "invalid"
-                              : "pending"}
-                        </code>
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
             )}
           </div>
 
           <div className="proof-data">
-            <h4>Complete Proof Package (for verification)</h4>
-            <pre className="proof-json">
-              {JSON.stringify(
-                {
-                  proof: zkProof.proof,
-                  publicSignals: zkProof.publicSignals,
-                },
-                null,
-                2,
-              )}
-            </pre>
+            <h4>Complete Proof Package</h4>
+            <pre className="proof-json">{JSON.stringify(proofPackage, null, 2)}</pre>
           </div>
+
         </div>
       )}
     </div>
