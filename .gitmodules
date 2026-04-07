@@ -1,3 +1,0 @@
-[submodule "src/ecdsa-fuzzy-signature"]
-	path = src/ecdsa-fuzzy-signature
-	url = https://github.com/avozda/ecdsa-fuzzy-signature

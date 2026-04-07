@@ -1,33 +1,26 @@
 # Proof of Uniqueness
 
-Privacy-preserving identity enrollment and revocation on Ethereum using ZK proofs and holder/issuer EdDSA signatures.
+Privacy-preserving identity enrollment and revocation on Ethereum using Noir + Barretenberg proofs and holder/issuer BabyJubJub EdDSA signatures.
 
-## Current Crypto Suite
-
-- Holder and issuer signatures: **BabyJubJub EdDSA + Poseidon**
-- Enrollment verification: **Groth16 proof** (`IdentityEnrollment`)
-- Revocation verification: **Groth16 proof** (`IdentityRevocation`)
-No legacy ECDSA/secp256k1 path is supported.
+No legacy Circom/Groth16 path is supported.
 
 ## End-to-End Flow
 
 1. Client generates holder keypair.
-2. Client creates VC, issuer signs VC Merkle root, holder signs subject binding.
+2. Client creates VC and issuer signs VC Merkle root.
 3. Client generates enrollment proof and submits to `IdentityRegistry.enroll(...)`.
-4. Contract verifies proof + trusted issuer, stores identity record keyed by `hashID`.
-5. For revocation, client generates revocation proof (fresh challenge bound to chain + contract + hashID) and submits `revokeIdentityWithProof(...)`.
+4. Contract verifies proof + trusted issuer + trusted OPRF key, then stores identity record keyed by nullifier.
+5. For revocation, client generates revocation proof (fresh challenge block bound) and submits `IdentityRegistry.revoke(...)`.
 
 ## Repository Structure
 
 ```text
 src/
-├── circuits/
-│   ├── IdentityEnrollment.circom
-│   ├── IdentityRevocation.circom
-│   └── build/
 ├── client/
 │   ├── public/circuits/
 │   └── src/
+├── oprf-testnet/
+│   └── noir/
 └── smart-contracts/
 ```
 
@@ -60,5 +53,4 @@ Open `http://localhost:5173`.
 ## Notes
 
 - Enrollment/revocation artifacts consumed by the client are in `src/client/public/circuits`.
-- If you regenerate circuit artifacts, copy updated `.wasm`, `.zkey`, and verification keys into that folder.
-- If you change public signals, regenerate Solidity verifiers and redeploy `IdentityRegistry`.
+- If circuits/public signals change, regenerate Noir artifacts, verifier contracts, and redeploy `IdentityRegistry`.

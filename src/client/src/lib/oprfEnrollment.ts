@@ -88,12 +88,6 @@ interface BackendSelfCheckResult {
   vkHash?: string;
 }
 
-interface RawProofPackage {
-  proof: string;
-  publicSignals: string[];
-}
-
-
 export interface VcOprfEnrollmentProofPackage {
   proof: `0x${string}`;
   publicSignals: `0x${string}`[];
@@ -578,10 +572,6 @@ async function fetchLiveOprfTranscript(
   const blindedRequest = blindQuery(hashId, beta);
   const requestId = crypto.randomUUID();
 
-  if (network.authModule !== "vc-ownership") {
-    throw new Error("Only vc-ownership auth module is supported");
-  }
-
   onProgress?.("Building blinded-query auth proof witness...");
   const vcCircuit = await loadVcBlindedQueryAuthCircuitArtifact();
   const vcInputs = buildVcBlindedQueryAuthNoirInputs(
@@ -704,9 +694,6 @@ async function fetchLiveOprfTranscript(
 export async function validateOprfNetworkConfig(
   network: OprfNetworkConfig,
 ): Promise<void> {
-  if (network.authModule !== "vc-ownership") {
-    throw new Error("authModule must be vc-ownership");
-  }
   if (network.nodeBases.length < 1) {
     throw new Error("At least one OPRF node URL is required");
   }
@@ -829,53 +816,5 @@ export async function buildVcRevocationProofPackage(
     publicSignals: publicSignalsBig.map(toBytes32Hex),
     challengeBlockNumber,
     decoded: decodeRevocationSignals(publicSignalsBig),
-  };
-}
-
-export function parseVcOprfEnrollmentProofPackage(
-  rawJson: string,
-  expected: {
-    issuerPubKeyX: bigint;
-    issuerPubKeyY: bigint;
-    holderPubKeyX: bigint;
-    holderPubKeyY: bigint;
-  },
-): VcOprfEnrollmentProofPackage {
-  let parsed: RawProofPackage;
-  try {
-    parsed = JSON.parse(rawJson) as RawProofPackage;
-  } catch {
-    throw new Error("Invalid JSON proof package");
-  }
-
-  if (typeof parsed.proof !== "string" || !parsed.proof.startsWith("0x")) {
-    throw new Error("Proof package must contain hex `proof`");
-  }
-  if (!Array.isArray(parsed.publicSignals) || parsed.publicSignals.length !== 10) {
-    throw new Error("Proof package must contain exactly 10 public signals");
-  }
-
-  const toBig = (h: string) => {
-    if (typeof h !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(h)) {
-      throw new Error("Every public signal must be 32-byte hex (bytes32)");
-    }
-    const v = BigInt(h);
-    if (v >= FIELD_MODULUS) throw new Error("Public signal exceeds BN254 field modulus");
-    return v;
-  };
-
-  const values = parsed.publicSignals.map(toBig);
-
-  if (values[3] !== expected.holderPubKeyX || values[4] !== expected.holderPubKeyY) {
-    throw new Error("Holder public key in proof package does not match current VC holder key");
-  }
-  if (values[5] !== expected.issuerPubKeyX || values[6] !== expected.issuerPubKeyY) {
-    throw new Error("Issuer public key in proof package does not match current issuer key");
-  }
-
-  return {
-    proof: parsed.proof as `0x${string}`,
-    publicSignals: parsed.publicSignals as `0x${string}`[],
-    decoded: decodeFromPublicSignals(values),
   };
 }

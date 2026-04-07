@@ -61,25 +61,6 @@ fn blinded_query_matches_request(
         && fq_to_dec_string(outputs.blinded_query_y) == req.blinded_query.y.to_string()
 }
 
-/// Legacy decoded outputs for historical `vc_ownership_proof` artifact.
-#[derive(Debug, Clone)]
-pub struct VcOwnershipLegacyPublicOutputs {
-    /// Hash ID derived in-circuit.
-    pub hash_id: ark_babyjubjub::Fq,
-    /// Issuer field.
-    pub out_issuer: ark_babyjubjub::Fq,
-    /// Valid-until field.
-    pub out_valid_until: ark_babyjubjub::Fq,
-    /// Holder public key x-coordinate.
-    pub out_holder_pub_key_x: ark_babyjubjub::Fq,
-    /// Holder public key y-coordinate.
-    pub out_holder_pub_key_y: ark_babyjubjub::Fq,
-    /// Signer public key x-coordinate.
-    pub out_signer_pub_key_x: ark_babyjubjub::Fq,
-    /// Signer public key y-coordinate.
-    pub out_signer_pub_key_y: ark_babyjubjub::Fq,
-}
-
 /// Authentication errors for VC ownership requests.
 #[derive(Debug, thiserror::Error)]
 pub enum VcOwnershipRequestAuthError {
@@ -89,9 +70,6 @@ pub enum VcOwnershipRequestAuthError {
     /// Internal server error.
     #[error(transparent)]
     InternalServerError(#[from] eyre::Report),
-    /// Unknown mapped close code.
-    #[error("unknown_error_{0}")]
-    Unknown(u16),
 }
 
 /// Close code mapping for VC ownership auth errors.
@@ -111,7 +89,6 @@ impl From<&VcOwnershipRequestAuthError> for u16 {
             VcOwnershipRequestAuthError::InternalServerError(_) => {
                 vc_ownership_request_auth_error_codes::INTERNAL
             }
-            VcOwnershipRequestAuthError::Unknown(other) => *other,
         }
     }
 }
@@ -144,10 +121,6 @@ impl From<VcOwnershipRequestAuthError> for OprfRequestAuthenticatorError {
             VcOwnershipRequestAuthError::InternalServerError(err) => {
                 tracing::error!("Internal server error: {err:?}");
                 taceo_oprf::types::close_frame_message!("Internal Server Error")
-            }
-            VcOwnershipRequestAuthError::Unknown(other) => {
-                tracing::error!("Unknown authentication error with code: {other}");
-                taceo_oprf::types::close_frame_message!("Unknown authentication error")
             }
         };
         Self::with_message(code, msg)
@@ -225,36 +198,6 @@ impl OprfRequestAuthenticator for VcOwnershipRequestAuthenticator {
     }
 }
 
-/// Parses VC proof public outputs from serialized `public_inputs` bytes.
-pub fn parse_public_outputs(
-    public_inputs: &[u8],
-) -> Result<VcProofPublicOutputs, VcOwnershipRequestAuthError> {
-    const OUTPUTS: usize = 4;
-    const FIELD_BYTES: usize = 32;
-    let expected = OUTPUTS * FIELD_BYTES;
-    if public_inputs.len() < expected {
-        return Err(VcOwnershipRequestAuthError::InternalServerError(
-            eyre::eyre!(
-                "public inputs too short: expected at least {expected} bytes, got {}",
-                public_inputs.len()
-            ),
-        ));
-    }
-
-    let read_fq = |idx: usize| {
-        let start = idx * FIELD_BYTES;
-        let end = start + FIELD_BYTES;
-        ark_babyjubjub::Fq::from_be_bytes_mod_order(&public_inputs[start..end])
-    };
-
-    Ok(VcProofPublicOutputs {
-        blinded_query_x: read_fq(0),
-        blinded_query_y: read_fq(1),
-        out_holder_pub_key_x: read_fq(2),
-        out_holder_pub_key_y: read_fq(3),
-    })
-}
-
 /// Parses VC proof public outputs from little-endian serialized field bytes.
 pub fn parse_public_outputs_le(
     public_inputs: &[u8],
@@ -285,105 +228,12 @@ pub fn parse_public_outputs_le(
     })
 }
 
-/// Parses legacy VC ownership proof outputs from serialized `public_inputs` bytes.
-pub fn parse_legacy_public_outputs(
-    public_inputs: &[u8],
-) -> Result<VcOwnershipLegacyPublicOutputs, VcOwnershipRequestAuthError> {
-    const OUTPUTS: usize = 7;
-    const FIELD_BYTES: usize = 32;
-    let expected = OUTPUTS * FIELD_BYTES;
-    if public_inputs.len() < expected {
-        return Err(VcOwnershipRequestAuthError::InternalServerError(
-            eyre::eyre!(
-                "public inputs too short: expected at least {expected} bytes, got {}",
-                public_inputs.len()
-            ),
-        ));
-    }
-
-    let read_fq = |idx: usize| {
-        let start = idx * FIELD_BYTES;
-        let end = start + FIELD_BYTES;
-        ark_babyjubjub::Fq::from_be_bytes_mod_order(&public_inputs[start..end])
-    };
-
-    Ok(VcOwnershipLegacyPublicOutputs {
-        hash_id: read_fq(0),
-        out_issuer: read_fq(1),
-        out_valid_until: read_fq(2),
-        out_holder_pub_key_x: read_fq(3),
-        out_holder_pub_key_y: read_fq(4),
-        out_signer_pub_key_x: read_fq(5),
-        out_signer_pub_key_y: read_fq(6),
-    })
-}
-
 /// ZK helpers for VC ownership proofs.
 pub mod zk {
-    use std::{
-        io::Write,
-        path::Path,
-        process::{self, Command},
-    };
+    use std::{io::Write, path::Path, process::Command};
 
     use eyre::Context;
-    use tempfile::{NamedTempFile, TempDir};
-
-    use crate::wallet_ownership::zk as shared_zk;
-
-    const VC_BLINDED_QUERY_AUTH_PROOF_PROGRAM_ARTIFACT: &[u8] =
-        include_bytes!("../vc_blinded_query_auth_proof.json");
-    const VC_BLINDED_QUERY_AUTH_PROOF_VK: &[u8] =
-        include_bytes!("../vc_blinded_query_auth_proof.vk.bin");
-
-    /// Computes a VC blinded-query auth proof from a prepared Noir `Prover.toml` input file.
-    pub fn compute_vc_ownership_proof(prover_toml: &Path) -> eyre::Result<(Vec<u8>, Vec<u8>)> {
-        let temp_dir =
-            TempDir::new().context("creating temporary directory for VC proof generation")?;
-        let path = temp_dir.path();
-        let program_artifact = path.join("program_artifact.json");
-        let vk = path.join("vk");
-        let witness = path.join("witness.gz");
-
-        std::fs::write(&program_artifact, VC_BLINDED_QUERY_AUTH_PROOF_PROGRAM_ARTIFACT)?;
-        std::fs::write(&vk, VC_BLINDED_QUERY_AUTH_PROOF_VK)?;
-
-        shared_zk::generate_witness(&program_artifact, prover_toml, &witness)?;
-
-        generate_proof(path, &program_artifact, &witness, &vk)
-    }
-
-    fn generate_proof(
-        path: &Path,
-        program_artifact: &Path,
-        witness: &Path,
-        vk: &Path,
-    ) -> eyre::Result<(Vec<u8>, Vec<u8>)> {
-        let bb_prove_status = Command::new("bb")
-            .arg("prove")
-            .arg("-b")
-            .arg(program_artifact)
-            .arg("-k")
-            .arg(vk)
-            .arg("-w")
-            .arg(witness)
-            .current_dir(path)
-            .stdout(process::Stdio::null())
-            .stderr(process::Stdio::null())
-            .status()
-            .context("while spawning bb prove")?;
-
-        eyre::ensure!(
-            bb_prove_status.success(),
-            "'bb prove' failed with status code: {:?}",
-            bb_prove_status.code()
-        );
-
-        let public_inputs = std::fs::read(path.join("out/public_inputs"))?;
-        let proof = std::fs::read(path.join("out/proof"))?;
-
-        Ok((public_inputs, proof))
-    }
+    use tempfile::NamedTempFile;
 
     /// Verifies a VC ownership proof with strict input shape checks.
     pub fn verify_proof(

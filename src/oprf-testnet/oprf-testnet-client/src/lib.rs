@@ -8,16 +8,11 @@ use eyre::Context;
 use oprf_testnet_authentication::{
     AuthModule,
     basic::BasicTestNetRequestAuth,
-    vc_ownership::{self, VcOwnershipRequestAuth},
     wallet_ownership::TestNetRequestAuth,
     wallet_ownership::zk,
 };
 use rand::{CryptoRng, Rng};
-use std::{
-    path::Path,
-    process::Command,
-    time::{Instant, SystemTime, UNIX_EPOCH},
-};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use taceo_oprf::client::{self, VerifiableOprfOutput};
 use taceo_oprf::{client::Connector, core::oprf::BlindingFactor};
 use tempfile::NamedTempFile;
@@ -153,104 +148,6 @@ pub async fn wallet_ownership_verifiable_oprf<R: Rng + CryptoRng>(
     );
 
     Ok((verifiable_oprf_output, public_inputs, proof))
-}
-
-#[instrument(level = "debug", skip_all)]
-pub async fn vc_ownership_verifiable_oprf<R: Rng + CryptoRng>(
-    nodes: &[String],
-    threshold: usize,
-    api_key: String,
-    vc_path: &Path,
-    expected_hash_id: Option<ark_babyjubjub::Fq>,
-    connector: Connector,
-    rng: &mut R,
-) -> eyre::Result<VerifiableOprfOutput> {
-    tracing::info!("Running distributed OPRF with API and VC proof authentication");
-    let start = Instant::now();
-    let blinding_factor = BlindingFactor::rand(rng);
-    let domain_separator = ark_babyjubjub::Fq::from_be_bytes_mod_order(b"OPRF TestNet");
-
-    let prover_input = build_vc_prover_input(vc_path)?;
-    let (public_inputs, proof) = vc_ownership::zk::compute_vc_ownership_proof(prover_input.path())?;
-
-    let auth = VcOwnershipRequestAuth {
-        public_inputs: public_inputs.clone(),
-        proof,
-        api_key,
-        // Rust demo client does not currently derive/sign the live request challenge
-        // for vc-ownership auth. These placeholders keep compilation intact; browser
-        // path provides real holder request signatures.
-        holder_sig_r8x: "0".to_owned(),
-        holder_sig_r8y: "0".to_owned(),
-        holder_sig_s: "0".to_owned(),
-    };
-
-    let hash_id = parse_hash_id_from_public_inputs(&public_inputs)
-        .context("while parsing hash_id from vc proof public inputs")?;
-    if let Some(expected_hash_id) = expected_hash_id {
-        eyre::ensure!(
-            hash_id == expected_hash_id,
-            "hash_id mismatch: parsed from proof public inputs is {}, expected {}",
-            hash_id,
-            expected_hash_id,
-        );
-    }
-
-    let nodes = taceo_oprf::client::to_oprf_uri_many(nodes, AuthModule::VcOwnership)
-        .context("while parsing URIs")?;
-
-    let verifiable_oprf_output = client::distributed_oprf(
-        &nodes,
-        threshold,
-        hash_id,
-        blinding_factor,
-        domain_separator,
-        auth,
-        connector,
-    )
-    .await;
-    let verifiable_oprf_output = make_server_errors_human_friendly(verifiable_oprf_output)
-        .context("during execution of the OPRF protocol")?;
-
-    let elapsed = start.elapsed();
-    tracing::info!("Total time taken for distributed OPRF with VC proof: {elapsed:?}");
-
-    Ok(verifiable_oprf_output)
-}
-
-pub fn parse_hash_id_from_public_inputs(public_inputs: &[u8]) -> eyre::Result<ark_babyjubjub::Fq> {
-    let outputs = vc_ownership::parse_legacy_public_outputs(public_inputs)
-        .map_err(|err| eyre::eyre!("failed parsing VC public outputs: {err}"))?;
-    Ok(outputs.hash_id)
-}
-
-fn build_vc_prover_input(vc_path: &Path) -> eyre::Result<NamedTempFile> {
-    let prover_input =
-        NamedTempFile::new().context("creating temporary Prover.toml for VC proof")?;
-    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../client/scripts/build-vc-prover-input.mjs");
-
-    eyre::ensure!(
-        script.exists(),
-        "missing helper script at {}",
-        script.display()
-    );
-
-    let output = Command::new("node")
-        .arg(script)
-        .arg("--vc-path")
-        .arg(vc_path)
-        .arg("--out")
-        .arg(prover_input.path())
-        .output()
-        .context("failed to execute node for VC prover input generation")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        eyre::bail!("failed generating VC prover input: {stderr}");
-    }
-
-    Ok(prover_input)
 }
 
 fn make_server_errors_human_friendly(
