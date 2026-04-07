@@ -24,7 +24,6 @@ export function DIDSection({ issuerDID, onRegenerate }: DIDSectionProps) {
       <div className="did-card">
         <div className="did-header">
           <div className="did-label">
-            <span className="key-icon">🔑</span>
             Issuer Decentralized Identifier (DID)
           </div>
           <button
@@ -32,7 +31,6 @@ export function DIDSection({ issuerDID, onRegenerate }: DIDSectionProps) {
             onClick={onRegenerate}
             type="button"
           >
-            <span className="regenerate-icon">🔄</span>
             Generate New
           </button>
         </div>
@@ -59,7 +57,7 @@ export function DIDSection({ issuerDID, onRegenerate }: DIDSectionProps) {
         <div className="uint256-section">
           <div className="uint256-header">
             <span className="uint256-label">
-              📋 Public Key (uint256 for Smart Contract)
+              Public Key (uint256 for Smart Contract)
             </span>
           </div>
           <div className="uint256-grid">
@@ -71,7 +69,7 @@ export function DIDSection({ issuerDID, onRegenerate }: DIDSectionProps) {
                   onClick={() => copyToClipboard(pubKeyX, "x")}
                   type="button"
                 >
-                  {copiedField === "x" ? "✓" : "📋"}
+                  {copiedField === "x" ? "Copied" : "Copy"}
                 </button>
               </div>
               <code className="uint256-value">{pubKeyX}</code>
@@ -84,7 +82,7 @@ export function DIDSection({ issuerDID, onRegenerate }: DIDSectionProps) {
                   onClick={() => copyToClipboard(pubKeyY, "y")}
                   type="button"
                 >
-                  {copiedField === "y" ? "✓" : "📋"}
+                  {copiedField === "y" ? "Copied" : "Copy"}
                 </button>
               </div>
               <code className="uint256-value">{pubKeyY}</code>

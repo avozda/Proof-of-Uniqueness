@@ -328,7 +328,6 @@ export function ZKProofSection({
   return (
     <div className="proof-section">
       <h3>
-        <span className="proof-icon">🔐</span>
         OPRF Enrollment Proof
       </h3>
       <p className="proof-description">
@@ -354,7 +353,6 @@ export function ZKProofSection({
           </>
         ) : (
           <>
-            <span className="btn-icon">🛡️</span>
             Generate OPRF Enrollment Package
           </>
         )}
@@ -362,7 +360,7 @@ export function ZKProofSection({
 
       {proofError && (
         <div className="proof-error">
-          <span>❌</span> {proofError}
+          {proofError}
         </div>
       )}
 
@@ -375,7 +373,7 @@ export function ZKProofSection({
       {proofPackage && (
         <div className="proof-result">
           <div className="proof-status">
-            <span className="proof-verified">✓ Package Ready</span>
+            <span className="proof-verified">Package Ready</span>
           </div>
 
           <div className="proof-outputs">
@@ -414,7 +412,6 @@ export function ZKProofSection({
 
           <div className="contract-section">
             <h4>
-              <span className="contract-icon">📜</span>
               Submit to Smart Contract
             </h4>
 
@@ -432,7 +429,6 @@ export function ZKProofSection({
                   </>
                 ) : (
                   <>
-                    <span className="btn-icon">🦊</span>
                     Connect MetaMask
                   </>
                 )}
@@ -461,7 +457,7 @@ export function ZKProofSection({
                       <span className="issuer-trust-status">Checking issuer on-chain…</span>
                     ) : issuerTrusted ? (
                       <span className="issuer-trust-badge trusted">
-                        ✓ Issuer trusted for this contract
+                        Issuer trusted for this contract
                       </span>
                     ) : contractAddressValid ? (
                       <span className="issuer-trust-badge untrusted">
@@ -497,12 +493,10 @@ export function ZKProofSection({
                       </>
                     ) : issuerTrusted ? (
                       <>
-                        <span className="btn-icon">✓</span>
                         Issuer already on-chain
                       </>
                     ) : (
                       <>
-                        <span className="btn-icon">📌</span>
                         Register current issuer on-chain
                       </>
                     )}
@@ -510,7 +504,6 @@ export function ZKProofSection({
 
                   {displayIssuerTxError != null && (
                     <div className="tx-error issuer-tx-error" role="alert">
-                      <span className="tx-error-icon">❌</span>
                       <span className="tx-error-text">{displayIssuerTxError}</span>
                     </div>
                   )}
@@ -534,7 +527,6 @@ export function ZKProofSection({
                     </>
                   ) : (
                     <>
-                      <span className="btn-icon">🚀</span>
                       Enroll Identity On-Chain
                     </>
                   )}
@@ -565,7 +557,6 @@ export function ZKProofSection({
                     </>
                   ) : (
                     <>
-                      <span className="btn-icon">🗑️</span>
                       Revoke Identity
                     </>
                   )}
@@ -579,14 +570,13 @@ export function ZKProofSection({
 
                 {displayRevokeTxError != null && (
                   <div className="tx-error" role="alert">
-                    <span className="tx-error-icon">❌</span>
                     <span className="tx-error-text">{displayRevokeTxError}</span>
                   </div>
                 )}
 
                 {revokeTxSucceededOnChain && (
                   <div className="proof-status" role="status">
-                    <span className="proof-verified">✓ Identity revoked on-chain</span>
+                    <span className="proof-verified">Identity revoked on-chain</span>
                   </div>
                 )}
 
@@ -599,14 +589,13 @@ export function ZKProofSection({
 
                 {displayTxError != null && (
                   <div className="tx-error" role="alert">
-                    <span className="tx-error-icon">❌</span>
                     <span className="tx-error-text">{displayTxError}</span>
                   </div>
                 )}
 
                 {txSucceededOnChain && (
                   <div className="proof-status" role="status">
-                    <span className="proof-verified">✓ Identity enrolled on-chain</span>
+                    <span className="proof-verified">Identity enrolled on-chain</span>
                   </div>
                 )}
 
