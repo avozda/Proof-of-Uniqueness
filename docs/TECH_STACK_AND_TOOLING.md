@@ -4,7 +4,7 @@ This document summarizes the technologies used in this repository and why each i
 
 ## 1) Languages
 
-## TypeScript (Client + Node scripts)
+### TypeScript (Client + Node scripts)
 
 - Used in browser app (`src/client/src/**`) for UI, proving orchestration, and wallet/contract integration.
 - Needed because:
@@ -12,7 +12,7 @@ This document summarizes the technologies used in this repository and why each i
   - easy integration with React, wagmi, viem, Noir JS, and OPRF JS SDKs,
   - same ecosystem supports small Node helper scripts.
 
-## Rust (OPRF node/auth/client)
+### Rust (OPRF node/auth/client)
 
 - Used in `src/oprf-testnet/**` for auth modules, node services, and CLI client.
 - Needed because:
@@ -20,14 +20,14 @@ This document summarizes the technologies used in this repository and why each i
   - direct integration with `taceo-oprf` service/types/core crates,
   - strong correctness guarantees for auth-critical server code.
 
-## Solidity (On-chain verification)
+### Solidity (On-chain verification)
 
 - Used in `src/smart-contracts/src/**` for registry and verifier integration.
 - Needed because:
   - final trust boundary is EVM verification and state updates,
   - enforces strict public-signal checks and business policy (trusted issuer, expiry, key id).
 
-## Noir (ZK circuits)
+### Noir (ZK circuits)
 
 - Used for circuits in `src/oprf-testnet/noir/**`.
 - Needed because:
@@ -36,7 +36,7 @@ This document summarizes the technologies used in this repository and why each i
 
 ## 2) ZK and Cryptographic Components
 
-## Noir JS + Barretenberg backend
+### Noir JS + Barretenberg backend
 
 - Packages: `@noir-lang/noir_js`, `@noir-lang/backend_barretenberg` (client), plus Rust-side Noir tooling crates.
 - Needed because:
@@ -45,21 +45,21 @@ This document summarizes the technologies used in this repository and why each i
   - local proof verification/self-check before submission,
   - compatibility with Ultra/Barretenberg-generated verifier artifacts.
 
-## BabyJubJub EdDSA
+### BabyJubJub EdDSA
 
 - Used for issuer signatures, holder binding signatures, and holder live-request signature.
 - Needed because:
   - circuit-friendly signature primitive on BN254 ecosystem,
   - efficient verification in Noir circuits and off-chain checks.
 
-## Poseidon hash
+### Poseidon hash
 
 - Used for domain-separated message hashing and field-friendly hashing.
 - Needed because:
   - ZK-friendly hash function for circuit and off-chain consistency,
   - avoids expensive non-native hash constructions inside circuits.
 
-## BN254 field constraints
+### BN254 field constraints
 
 - Field modulus checks exist in client and contract code.
 - Needed because:
@@ -68,21 +68,21 @@ This document summarizes the technologies used in this repository and why each i
 
 ## 3) OPRF Stack
 
-## JavaScript OPRF SDK
+### JavaScript OPRF SDK
 
 - `@taceo/oprf-client`, `@taceo/oprf-core` in client.
 - Needed because:
   - browser computes blinded queries, session orchestration, response unblinding, transcript validation,
   - implements threshold OPRF interaction from frontend flow.
 
-## Rust OPRF crates
+### Rust OPRF crates
 
 - `taceo-oprf` and related crates in `src/oprf-testnet` workspace.
 - Needed because:
   - node-side service runtime and auth integration,
   - typed request/auth handling and protocol consistency.
 
-## Auth module: `vc-ownership`
+### Auth module: `vc-ownership`
 
 - Implemented in `src/oprf-testnet/oprf-testnet-authentication/src/vc_ownership.rs`.
 - Needed because:
@@ -93,21 +93,21 @@ This document summarizes the technologies used in this repository and why each i
 
 ## 4) Frontend and Web3
 
-## React + Vite
+### React + Vite
 
 - React for UI state flow; Vite for fast dev/build pipeline.
 - Needed because:
   - interactive multi-step UX (generate, observe progress, submit),
   - build toolchain that supports wasm assets required by proving runtime.
 
-## wagmi + viem
+### wagmi + viem
 
 - Used for wallet connection, transaction submission, and contract reads/writes.
 - Needed because:
   - typed EVM interactions,
   - robust transaction lifecycle handling in UI.
 
-## TanStack Query
+### TanStack Query
 
 - Transitively used via wagmi/react-query integration.
 - Needed because:
@@ -115,21 +115,21 @@ This document summarizes the technologies used in this repository and why each i
 
 ## 5) Smart Contract Tooling
 
-## Foundry (`forge`, `anvil`)
+### Foundry (`forge`, `anvil`)
 
 - Config: `src/smart-contracts/foundry.toml`.
 - Needed because:
   - compile, test, and deploy Solidity contracts,
   - local EVM simulation for full E2E.
 
-### Why larger code size limit is configured
+#### Why larger code size limit is configured
 
 - Generated verifier contracts are large.
 - `code_size_limit = 50000` (and matching local Anvil settings) is needed for local deployments of verifier-heavy contracts.
 
 ## 6) Rust Service Tooling
 
-## Tokio + Axum + Reqwest + Serde ecosystem
+### Tokio + Axum + Reqwest + Serde ecosystem
 
 - Present across OPRF node/auth crates.
 - Needed because:
@@ -139,7 +139,7 @@ This document summarizes the technologies used in this repository and why each i
 
 ## 7) Node Helper Scripts
 
-## `verify-vc-ownership-auth.mjs`
+### `verify-vc-ownership-auth.mjs`
 
 - Path: `src/client/scripts/verify-vc-ownership-auth.mjs`.
 - Used by Rust auth module via `node` subprocess.
@@ -150,14 +150,14 @@ This document summarizes the technologies used in this repository and why each i
 
 ## 8) Circuit and Artifact Tooling
 
-## Nargo / Noir toolchain
+### Nargo / Noir toolchain
 
 - Circuits are defined with `Nargo.toml` in `src/oprf-testnet/noir/**`.
 - Needed because:
   - compile circuits to artifacts consumed by browser and verifier generation pipelines,
   - maintain reproducible circuit definitions and dependencies.
 
-## Barretenberg CLI (`bb`)
+### Barretenberg CLI (`bb`)
 
 - Used in parts of Rust-side proof workflows and historical verification flows.
 - Needed because:
@@ -166,19 +166,19 @@ This document summarizes the technologies used in this repository and why each i
 
 ## 9) Operational Constraints and Compatibility
 
-## Noir/Barretenberg version alignment
+### Noir/Barretenberg version alignment
 
 - Critical requirement: circuit `noir_version` must match backend expectations.
 - Why needed:
   - mismatches can produce invalid proofs, verifier rejections, or runtime failures.
 
-## Endianness handling for public inputs
+### Endianness handling for public inputs
 
 - Current auth flow uses LE byte parsing for browser-produced public inputs.
 - Why needed:
   - prevents false proof/signature rejection from serialization mismatch.
 
-## Strict vc-ownership-only mode
+### Strict vc-ownership-only mode
 
 - Client and auth flow are constrained to `authModule: "vc-ownership"`.
 - Contract enforces `oprfKeyId == 3`.

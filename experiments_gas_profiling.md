@@ -52,18 +52,18 @@ The measured enrollment path uses the current canonical 10-signal layout:
 ### A) Gas Report (Current Contract)
 
 
-| Metric                              | Measured Value           | Source/Notes                                 |
-| ----------------------------------- | ------------------------ | -------------------------------------------- |
-| `**IdentityRegistry` deployment**   | **1,510,960 gas**        | `forge test --gas-report`                    |
-| `**addTrustedIssuer`**              | **47,414 gas (avg)**     | Owner operation                              |
-| `**enroll` (global average)**       | **243,245 gas (avg)**    | Mixed call set (success + revert paths)      |
-| `**enroll` min / max**              | **25,790 / 265,128 gas** | Mixed reverting/success paths in test corpus |
-| `**revoke` (global average)**       | **42,168 gas (avg)**     | Mixed path average                           |
-| `**revoke` min / max**              | **25,710 / 58,928 gas**  | Includes successful revocation path          |
-| `**setTrustedOprfPublicKey`**       | **29,868 gas (avg)**     | OPRF trust anchor update                     |
-| `**removeTrustedIssuer`**           | **25,416 gas (avg)**     | Owner operation                              |
-| `**purgeInvalidRecords`**           | **53,166 gas (avg)**     | Permissionless maintenance path              |
-| `**purgeInvalidRecords` min / max** | **37,588 / 67,815 gas**  | Depends on scan span and deletions           |
+| Metric                                | Measured Value           | Source / Notes                               |
+| ------------------------------------- | ------------------------ | -------------------------------------------- |
+| `IdentityRegistry` **deployment**     | **1,510,960 gas**        | `forge test --gas-report`                    |
+| `addTrustedIssuer`                    | **47,414 gas (avg)**     | Owner operation                              |
+| `enroll` (global average)             | **243,245 gas (avg)**    | Mixed call set (success + revert paths)      |
+| `enroll` min / max                    | **25,790 / 265,128 gas** | Mixed reverting/success paths in test corpus |
+| `revoke` (global average)             | **42,168 gas (avg)**     | Mixed path average                           |
+| `revoke` min / max                    | **25,710 / 58,928 gas**  | Includes successful revocation path          |
+| `setTrustedOprfPublicKey`             | **29,868 gas (avg)**     | OPRF trust anchor update                     |
+| `removeTrustedIssuer`                 | **25,416 gas (avg)**     | Owner operation                              |
+| `purgeInvalidRecords`                 | **53,166 gas (avg)**     | Permissionless maintenance path              |
+| `purgeInvalidRecords` min / max       | **37,588 / 67,815 gas**  | Depends on scan span and deletions           |
 
 
 ### B) Scaling Benchmark (`IdentityRegistryScaling.t.sol`)
