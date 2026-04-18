@@ -121,7 +121,6 @@ export function IdentityForm({
             </>
           ) : (
             <>
-              <span className="btn-icon">⚡</span>
               Generate Verifiable Credential
             </>
           )}

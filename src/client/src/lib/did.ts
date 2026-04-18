@@ -220,33 +220,6 @@ export function signMessage(
   };
 }
 
-export function verifySignature(
-  publicKey: EdDSAPublicKey,
-  message: bigint,
-  signature: EdDSASignature,
-): boolean {
-  const eddsaInstance = getEddsa();
-
-  const pubKeyPoint = [
-    eddsaInstance.F.e(publicKey.x),
-    eddsaInstance.F.e(publicKey.y),
-  ];
-
-  const sig = {
-    R8: [
-      eddsaInstance.F.e(signature.R8[0]),
-      eddsaInstance.F.e(signature.R8[1]),
-    ],
-    S: signature.S,
-  };
-
-  return eddsaInstance.verifyPoseidon(
-    eddsaInstance.F.e(message),
-    sig,
-    pubKeyPoint,
-  );
-}
-
 export function poseidonHash(inputs: bigint[]): bigint {
   const poseidonInstance = getPoseidon();
   const hash = poseidonInstance(inputs);
@@ -508,15 +481,6 @@ export function toHex(bytes: Uint8Array): string {
   return bytesToHex(bytes);
 }
 
-export function fromHex(hex: string): Uint8Array {
-  const cleanHex = hex.startsWith("0x") ? hex.slice(2) : hex;
-  const bytes = new Uint8Array(cleanHex.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(cleanHex.slice(i * 2, i * 2 + 2), 16);
-  }
-  return bytes;
-}
-
 export function bigintToHex(n: bigint): string {
   return n.toString(16).padStart(64, "0");
 }
@@ -533,10 +497,4 @@ export function hashBytes(bytes: Uint8Array): bigint {
     chunks.push(value);
   }
   return poseidonHash(chunks);
-}
-
-/** Split verification key bytes into two field elements */
-export function vkToFieldElements(vk: Uint8Array): [bigint, bigint] {
-  const unpacked = unpackBabyJubPublicKey(vk);
-  return [unpacked.x, unpacked.y];
 }

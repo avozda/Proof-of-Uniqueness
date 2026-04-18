@@ -70,6 +70,34 @@ export function generatePersonId(): string {
 
 export const CRYPTOSUITE_ID = "eddsa-babyjubjub-poseidon-2024";
 
+function isIsoDateTime(value: string): boolean {
+  if (typeof value !== "string") return false;
+  const time = Date.parse(value);
+  if (!Number.isFinite(time)) return false;
+  return new Date(time).toISOString() === value;
+}
+
+function assertDemoVcShape(vc: VerifiableCredential): void {
+  if (!Array.isArray(vc["@context"]) || vc["@context"].length === 0) {
+    throw new Error("VC must include a non-empty @context array");
+  }
+  if (!Array.isArray(vc.type) || !vc.type.includes("VerifiableCredential")) {
+    throw new Error("VC type must include VerifiableCredential");
+  }
+  if (!vc.issuer?.id || !vc.credentialSubject?.id) {
+    throw new Error("VC must include issuer.id and credentialSubject.id");
+  }
+  if (!isIsoDateTime(vc.validFrom) || !isIsoDateTime(vc.validUntil)) {
+    throw new Error("VC validFrom/validUntil must be ISO 8601 date-time strings");
+  }
+  if (Date.parse(vc.validUntil) <= Date.parse(vc.validFrom)) {
+    throw new Error("VC validUntil must be later than validFrom");
+  }
+  if (!vc.proof?.type || !vc.proof?.proofValue || !isIsoDateTime(vc.proof.created)) {
+    throw new Error("VC proof must include type, proofValue, and ISO created timestamp");
+  }
+}
+
 export function createVerifiableCredential(
   formData: FormData,
   issuer: DIDKeyPair,
@@ -122,7 +150,7 @@ export function createVerifiableCredential(
     signatureData.signature.S
   );
 
-  return {
+  const vc: VerifiableCredential = {
     "@context": [
       "https://www.w3.org/ns/credentials/v2",
       "https://w3id.org/security/data-integrity/v2",
@@ -161,4 +189,7 @@ export function createVerifiableCredential(
       proofValue: proofValue,
     },
   };
+
+  assertDemoVcShape(vc);
+  return vc;
 }

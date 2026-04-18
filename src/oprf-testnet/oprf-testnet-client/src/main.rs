@@ -29,21 +29,9 @@ pub struct WalletOwnershipConfig {
 }
 
 #[derive(Parser, Debug, Clone)]
-pub struct VcOwnershipConfig {
-    /// Path to VC JSON file.
-    #[clap(long)]
-    pub vc_path: PathBuf,
-
-    /// Optional guard to assert parsed proof hashID equals this value.
-    #[clap(long)]
-    pub expected_hash_id: Option<String>,
-}
-
-#[derive(Parser, Debug, Clone)]
 pub enum AuthModuleArg {
     Basic(BasicConfig),
     WalletOwnership(WalletOwnershipConfig),
-    VcOwnership(VcOwnershipConfig),
 }
 
 /// The configuration for the OPRF client.
@@ -142,39 +130,6 @@ async fn main() -> eyre::Result<()> {
                 .await?;
             std::fs::write(output_path.join("proof"), &proof)?;
             std::fs::write(output_path.join("public_inputs"), &pulic_inputs)?;
-            tracing::info!("Nullifier: {}", verifiable_oprf_output.output);
-        }
-        AuthModuleArg::VcOwnership(VcOwnershipConfig {
-            vc_path,
-            expected_hash_id,
-        }) => {
-            let expected_hash_id = if let Some(expected_hash_id) = expected_hash_id {
-                let input_str = expected_hash_id.clone();
-                let expected_hash_id =
-                    ark_babyjubjub::Fq::from_str(&expected_hash_id).map_err(|_| {
-                        eyre::eyre!("Invalid expected_hash_id, must be a field element")
-                    })?;
-                eyre::ensure!(
-                    input_str == expected_hash_id.to_string(),
-                    "Parsed expected_hash_id does not match original string, this can happen if there are leading zeros, leading signs, or if the number is larger than the field modulus",
-                );
-                Some(expected_hash_id)
-            } else {
-                None
-            };
-
-            tracing::info!("Running vc ownership verifiable OPRF...");
-            let verifiable_oprf_output = taceo_oprf_testnet_client::vc_ownership_verifiable_oprf(
-                &config.nodes,
-                config.threshold,
-                config.api_key,
-                &vc_path,
-                expected_hash_id,
-                connector,
-                &mut rng,
-            )
-            .await?;
-
             tracing::info!("Nullifier: {}", verifiable_oprf_output.output);
         }
     }

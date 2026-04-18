@@ -17,7 +17,7 @@ forge fmt
 ## Deploy
 
 ```bash
-# required for local dev because Honk verifier exceeds EIP-170 size
+# required for local dev because generated verifier exceeds EIP-170 size
 anvil --code-size-limit 50000
 
 forge script script/IdentityRegistry.s.sol \

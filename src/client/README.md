@@ -33,6 +33,9 @@ If missing or replaced by HTML (e.g. 404 fallback page), browser proving fails w
 
 ## Current State
 
+- This app emits a simplified, demo-oriented VC 2.0-like JSON structure (not a full interoperability profile).
+- Kept minimum VC shape checks: `@context`, `type` includes `VerifiableCredential`, `issuer.id`, `credentialSubject.id`, and ISO `validFrom`/`validUntil`.
+- Full production items like hosted custom JSON-LD contexts, `credentialStatus`, and `credentialSchema` are intentionally out of scope for this mock.
 - Old Circom/Groth16 and revocation UI paths are removed from the frontend.
 - The frontend is OPRF-enrollment focused and submits `enroll(bytes,bytes32[])`.
 - OPRF package generation is strict and live-only: no scaffold fallback path.

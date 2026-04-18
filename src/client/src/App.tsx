@@ -170,7 +170,6 @@ function App() {
 
       <header className="header">
         <div className="header-badge">
-          <span className="badge-icon">◈</span>
           <span>Proof of Uniqueness</span>
         </div>
         <h1>Biometric Identity Credential</h1>

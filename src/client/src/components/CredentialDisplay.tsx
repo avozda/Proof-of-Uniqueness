@@ -34,12 +34,10 @@ export function CredentialDisplay({ credential }: CredentialDisplayProps) {
         >
           {copiedVC ? (
             <>
-              <span className="copy-icon">✓</span>
               Copied!
             </>
           ) : (
             <>
-              <span className="copy-icon">📋</span>
               Copy
             </>
           )}
