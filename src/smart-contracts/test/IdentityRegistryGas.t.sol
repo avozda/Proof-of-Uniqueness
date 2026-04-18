@@ -216,4 +216,63 @@ contract IdentityRegistryGasTest is Test {
         vm.expectRevert(IdentityRegistry.InvalidRevocationProof.selector);
         registry.revoke(hex"01", _revokeSignals(903, challengeBlock), challengeBlock);
     }
+
+    function testPurgeInvalidRecordsRemovesExpired() public {
+        bytes memory proof = hex"01";
+
+        bytes32[] memory expiredSignals = _signals(910);
+        expiredSignals[2] = bytes32(block.timestamp + 1);
+        registry.enroll(proof, expiredSignals);
+
+        bytes32[] memory activeSignals = _signals(911);
+        activeSignals[2] = bytes32(block.timestamp + 1000);
+        registry.enroll(proof, activeSignals);
+
+        vm.warp(block.timestamp + 2);
+
+        (uint256 purged, uint256 scanned, uint256 nextCursor) = registry.purgeInvalidRecords(10);
+        assertEq(purged, 1);
+        assertEq(scanned, 2);
+        assertEq(nextCursor, 0);
+
+        vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
+        registry.getIdentity(910);
+
+        assertTrue(registry.isIdentityValid(911));
+    }
+
+    function testPurgeInvalidRecordsRemovesUntrustedIssuer() public {
+        bytes memory proof = hex"01";
+        bytes32[] memory signals = _signals(920);
+        registry.enroll(proof, signals);
+
+        registry.removeTrustedIssuer(ISSUER_X, ISSUER_Y);
+
+        (uint256 purged, uint256 scanned, uint256 nextCursor) = registry.purgeInvalidRecords(10);
+        assertEq(purged, 1);
+        assertEq(scanned, 1);
+        assertEq(nextCursor, 0);
+
+        vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
+        registry.getIdentity(920);
+    }
+
+    function testPurgeInvalidRecordsCursorProgression() public {
+        bytes memory proof = hex"01";
+        registry.enroll(proof, _signals(930));
+        registry.enroll(proof, _signals(931));
+        registry.enroll(proof, _signals(932));
+
+        (, uint256 scanned1, uint256 cursor1) = registry.purgeInvalidRecords(1);
+        assertEq(scanned1, 1);
+        assertEq(cursor1, 1);
+
+        (, uint256 scanned2, uint256 cursor2) = registry.purgeInvalidRecords(1);
+        assertEq(scanned2, 1);
+        assertEq(cursor2, 2);
+
+        (, uint256 scanned3, uint256 cursor3) = registry.purgeInvalidRecords(1);
+        assertEq(scanned3, 1);
+        assertEq(cursor3, 0);
+    }
 }

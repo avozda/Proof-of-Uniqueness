@@ -1,40 +1,131 @@
-# Client-Side Cryptographic Benchmarks
+# Client-Side Cryptographic Benchmarks (Current Stack)
 
 ## Objective
-The objective of this experiment was to evaluate the computational overhead of the cryptographic operations executed on the user's client device. The primary focus was on the Biometric Fuzzy Signature mechanism (generating linear sketches and noise-tolerant key reconstruction) to determine if consumer devices can execute the protocol without noticeable latency.
+
+This experiment evaluates the computational overhead of the **current** client cryptographic stack:
+
+- BabyJubJub EdDSA + Poseidon preprocessing,
+- Noir witness generation,
+- Barretenberg proof generation and verification.
+
+The previous biometric fuzzy-signature benchmark is no longer relevant because that module was removed from the active architecture.
 
 ## Methodology
-The experiment was conducted using a Node.js runtime environment (v25.5.0) leveraging the `perf_hooks` performance timing API.
 
-1. **Environment Setup:** 
-   A script (`benchmark.mjs`) was created within the client directory to import the local `ecdsa-fuzzy-signature` package.
-2. **Mocking Data:** 
-   A pseudo-random 32-byte array (`Uint8Array`) was generated to simulate raw biometric sensor output.
-3. **Execution Profiling (Averaged over 100 iterations):**
-   - **Enrollment (Sketch Generation):** The script measured the execution time of the `enroll(rawBio)` function, which generates the initial biometric verification key and the public linear sketch (helper data).
-   - **Recovery (Noise-Tolerant Reconstruction):** The script simulated a fresh biometric scan, measured the time required by the `fuzzyRep()` algorithm to search the lattice and remove the biometric noise using the sketch, and subsequently timed the `derivePrivateKey()` function.
-4. **ZK Proof Analysis:**
-   The `snarkjs` output data (`r1cs info`) for the compiled `IdentityEnrollment` circuit was inspected to measure mathematical complexity (constraint count) as an indicator of expected browser proving time.
+### 1) Environment
+
+- Node.js: `v25.5.0`
+- Runtime timing API: `perf_hooks`
+- Script used:
+  - `src/client/scripts/benchmark-current-stack.mjs`
+
+### 2) Inputs and Measurement Strategy
+
+#### A. Crypto Micro-benchmarks (Poseidon / EdDSA / VC preprocessing)
+
+The benchmark measures per-iteration CPU time for:
+
+1. Poseidon hash over 9 field inputs (current HashID preimage arity)
+2. EdDSA Poseidon signing on BabyJubJub
+3. Deterministic VC preprocessing (13 labeled leaves + 16-leaf Merkle root)
+
+Procedure:
+
+- 3 independent runs
+- 200 iterations per run
+- warm-up performed before timing windows
+
+#### B. Noir + Barretenberg Proof Pipeline
+
+For proof-generation measurements, the script executes real circuits from `public/circuits`:
+
+- `vc_blinded_query_auth_proof.json`
+- `vc_revocation_proof.json`
+
+For each iteration it records:
+
+1. witness generation time (`noir.execute`)
+2. proof generation time (`backend.generateProof`)
+3. proof verification time (`backend.verifyProof`)
+
+Input witnesses are deterministic and valid, generated in-script to satisfy all circuit constraints.
+
+### 3) Circuit Complexity Snapshot
+
+Complexity was also measured using Noir tooling (`nargo info`) and Barretenberg (`bb gates`).
 
 ## Results
 
-### Biometric Fuzzy Extractor Performance
-The benchmark results (averaged over 100 iterations) were as follows:
+### A) Crypto Micro-benchmarks
 
-| Operation | Execution Time (Average) | Description |
-| :--- | :--- | :--- |
-| **Fuzzy Enrollment** | **0.30 ms** | Generation of the verification key and the linear sketch. |
-| **Fuzzy Recovery** | **0.04 ms** | Noise-tolerant reconstruction and private key derivation. |
+Average across 3 runs (200 iterations each):
 
-*Note: Initial "cold start" execution took ~13ms due to library initialization and JIT compilation, but subsequent executions immediately fell to sub-millisecond ranges.*
 
-### Zero-Knowledge Circuit Complexity
-The `snarkjs r1cs info` command provided the following metrics for the `IdentityEnrollment.circom` circuit:
+| Operation                                  | Average Time    | Notes                     |
+| ------------------------------------------ | --------------- | ------------------------- |
+| Poseidon hash (9-field input)              | **0.17308 ms**  | Per hash                  |
+| EdDSA sign (BabyJubJub, Poseidon)          | **13.47499 ms** | Per signature             |
+| VC preprocessing (13 leaves + Merkle root) | **1.24071 ms**  | Per VC preprocessing pass |
 
-- **Curve:** `bn-128`
-- **Total Constraints:** `24,827`
-- **Private Inputs:** `36`
-- **Public Outputs:** `8`
 
-**Conclusion:** 
-The biometric operations are highly optimized, completing in less than 1 millisecond on a standard CPU. This effectively introduces zero friction to the user experience. Furthermore, at just 24,827 non-linear constraints, the Groth16 circuit is incredibly lightweight. Standard browser-based WASM implementations (like `snarkjs`) generally resolve circuits of this size in 300 to 500 milliseconds, validating that the entire proof generation and biometric binding can occur securely on consumer mobile phones and laptops without hardware acceleration.
+Repeated execution produced similar values (about 1--2% variation), which is expected for JS/WASM timing on a general-purpose CPU.
+
+### B) Noir + Barretenberg Proof Benchmarks
+
+#### `vc_blinded_query_auth_proof` (3 iterations)
+
+- Average witness generation: **593.99 ms**
+- Average proof generation: **9,910.12 ms**
+- Average local verification: **6,994.28 ms**
+- Proof size: **2,144 bytes**
+- Public input count: **4**
+
+#### `vc_revocation_proof` (5 iterations)
+
+- Average witness generation: **165.08 ms**
+- Average proof generation: **4,703.79 ms**
+- Average local verification: **3,765.43 ms**
+
+A follow-up run remained within sub-1% variance for witness/prove/verify timings in both circuits.
+
+- Proof size: **2,144 bytes**
+- Public input count: **4**
+
+### C) Circuit Complexity
+
+From `nargo info` and `bb gates`:
+
+
+| Circuit                       | ACIR Opcodes | Circuit Size (gates) |
+| ----------------------------- | ------------ | -------------------- |
+| `vc_blinded_query_auth_proof` | **59,338**   | **61,794**           |
+| `vc_oprf_enrollment_proof`    | **121,335**  | **120,673**          |
+| `vc_revocation_proof`         | **18,427**   | **21,269**           |
+
+
+## Interpretation
+
+1. **Client proving is feasible but non-trivial**
+  - Proof generation dominates latency, especially for auth and enrollment-class circuits.
+2. **Revocation proving is significantly lighter**
+  - Lower witness/prove times align with the smaller circuit size.
+3. **Preprocessing overhead is small compared to proving**
+  - VC hashing and leaf construction are sub-millisecond to low-millisecond operations, while proving is multi-second.
+
+These measurements match the architecture expectation: user experience is primarily constrained by Noir/Barretenberg proving, not by EdDSA/Poseidon preprocessing.
+
+## Reproducibility
+
+Run from `src/client`:
+
+```bash
+node scripts/benchmark-current-stack.mjs
+```
+
+For circuit complexity:
+
+```bash
+nargo info                              # inside each circuit directory
+bb gates -b target/<circuit>.json
+```
+

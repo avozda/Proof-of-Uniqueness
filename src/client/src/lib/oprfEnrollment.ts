@@ -281,8 +281,6 @@ function computeHashIdFromVc(vc: VerifiableCredential): bigint {
       fieldValues[6],
       fieldValues[7],
       fieldValues[10],
-      fieldValues[0],
-      fieldValues[1],
     ]),
   );
 }
