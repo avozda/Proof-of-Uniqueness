@@ -104,7 +104,7 @@ Illustrative JSON payload sent to OPRF nodes under `vc-ownership` auth:
 
 Notes:
 
-- `public_inputs` is byte-level data (4 * 32 bytes total expected).
+- `public_inputs` is byte-level data (4 * 32 bytes total expected for the auth proof public outputs).
 - `proof` is byte-level proof payload.
 - Holder signature is decimal-string encoded field/scalar values.
 
@@ -115,7 +115,7 @@ Primary implementation: `src/oprf-testnet/oprf-testnet-authentication/src/vc_own
 The server enforces:
 
 1. **Strict payload shape**
-   - `public_inputs.len() == 7 * 32`
+   - `public_inputs.len() == 4 * 32`
    - `proof` non-empty
 2. **API key validation**
    - validated via Unkey flow in parallel.

@@ -73,6 +73,7 @@ contract IdentityRegistry {
     mapping(uint256 => bool) public trustedIssuers;
     mapping(address => bool) public owners;
     uint256[] public registeredNullifiers;
+    uint256 public purgeCursor;
 
     event IdentityEnrolled(
         uint256 indexed nullifier,
@@ -91,6 +92,7 @@ contract IdentityRegistry {
     event OwnerRemoved(address indexed owner);
     event TrustedOprfPublicKeyUpdated(uint256 oldPkX, uint256 oldPkY, uint256 newPkX, uint256 newPkY);
     event IdentityRevoked(uint256 indexed nullifier, uint256 challengeBlockNumber);
+    event IdentityPurged(uint256 indexed nullifier, bool expired, bool issuerUntrusted);
 
     error NotOwner();
     error IssuerNotTrusted();
@@ -256,6 +258,51 @@ contract IdentityRegistry {
 
     function getIdentityCount() external view returns (uint256 count) {
         return registeredNullifiers.length;
+    }
+
+    /// @notice Permissionless maintenance function to remove invalid identities.
+    /// @dev Removes records that are expired or whose issuer is no longer trusted.
+    /// @param maxIterations Maximum number of historical registry entries to scan in this call.
+    /// @return purged Number of identity records removed.
+    /// @return scanned Number of entries scanned.
+    /// @return nextCursor Cursor position for the next purge call.
+    function purgeInvalidRecords(uint256 maxIterations)
+        external
+        returns (uint256 purged, uint256 scanned, uint256 nextCursor)
+    {
+        uint256 total = registeredNullifiers.length;
+        if (total == 0 || maxIterations == 0) {
+            return (0, 0, purgeCursor);
+        }
+
+        uint256 cursor = purgeCursor;
+        uint256 iterations = maxIterations;
+        if (iterations > total) iterations = total;
+
+        for (uint256 i = 0; i < iterations; i++) {
+            if (cursor >= total) cursor = 0;
+
+            uint256 nullifier = registeredNullifiers[cursor];
+            IdentityRecord storage record = identitiesByNullifier[nullifier];
+
+            if (record.exists) {
+                uint256 issuerPubKeyHash = uint256(keccak256(abi.encodePacked(record.issuerPubKeyX, record.issuerPubKeyY)));
+                bool expired = block.timestamp > record.validUntil;
+                bool issuerUntrusted = !trustedIssuers[issuerPubKeyHash];
+
+                if (expired || issuerUntrusted) {
+                    delete identitiesByNullifier[nullifier];
+                    emit IdentityPurged(nullifier, expired, issuerUntrusted);
+                    purged++;
+                }
+            }
+
+            cursor++;
+            scanned++;
+        }
+
+        purgeCursor = cursor >= total ? cursor % total : cursor;
+        nextCursor = purgeCursor;
     }
 
     function addTrustedIssuer(uint256 pubKeyX, uint256 pubKeyY) external onlyOwner {

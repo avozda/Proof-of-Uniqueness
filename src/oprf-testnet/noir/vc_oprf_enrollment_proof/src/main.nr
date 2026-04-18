@@ -92,8 +92,6 @@ fn compute_hash_id(
         field_values[6],
         field_values[7],
         field_values[10],
-        field_values[0],
-        field_values[1],
     ])
 }
 
