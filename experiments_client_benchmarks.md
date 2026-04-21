@@ -40,6 +40,7 @@ Procedure:
 For proof-generation measurements, the script executes real circuits from `public/circuits`:
 
 - `vc_blinded_query_auth_proof.json`
+- `vc_oprf_enrollment_proof.json`
 - `vc_revocation_proof.json`
 
 For each iteration it records:
@@ -80,6 +81,16 @@ Repeated execution produced similar values (about 1--2% variation), which is exp
 - Proof size: **2,144 bytes**
 - Public input count: **4**
 
+#### `vc_oprf_enrollment_proof` (3 iterations)
+
+- Average witness generation: **1,407.44 ms**
+- Average proof generation: **18,521.21 ms**
+- Average local verification: **14,008.92 ms**
+- Median proof generation: **18,525.68 ms**
+- Median local verification: **14,012.16 ms**
+- Proof size: **2,144 bytes**
+- Public input count: **10**
+
 #### `vc_revocation_proof` (5 iterations)
 
 - Average witness generation: **165.08 ms**
@@ -107,10 +118,14 @@ From `nargo info` and `bb gates`:
 
 1. **Client proving is feasible but non-trivial**
   - Proof generation dominates latency, especially for auth and enrollment-class circuits.
-2. **Revocation proving is significantly lighter**
+2. **Enrollment is the dominant UX cost**
+  - The `vc_oprf_enrollment_proof` circuit has roughly twice the gate count of the auth circuit and shows a correspondingly larger proving cost (~18.5 s vs ~9.9 s). It is the critical-path bottleneck for first-time onboarding.
+3. **Revocation proving is significantly lighter**
   - Lower witness/prove times align with the smaller circuit size.
-3. **Preprocessing overhead is small compared to proving**
+4. **Preprocessing overhead is small compared to proving**
   - VC hashing and leaf construction are sub-millisecond to low-millisecond operations, while proving is multi-second.
+5. **Proofs stay succinct regardless of circuit size**
+  - All three circuits produce 2,144-byte Barretenberg Ultra proofs; only the number of public inputs differs (4 for auth/revocation, 10 for enrollment).
 
 These measurements match the architecture expectation: user experience is primarily constrained by Noir/Barretenberg proving, not by EdDSA/Poseidon preprocessing.
 
@@ -119,7 +134,8 @@ These measurements match the architecture expectation: user experience is primar
 Run from `src/client`:
 
 ```bash
-node scripts/benchmark-current-stack.mjs
+node scripts/benchmark-current-stack.mjs             # auth + revocation + micros
+ITER=3 node scripts/benchmark-enrollment.mjs         # enrollment circuit (heavy)
 ```
 
 For circuit complexity:
