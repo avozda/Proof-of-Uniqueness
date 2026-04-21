@@ -35,5 +35,5 @@ run-client *args:
 noir-tests:
     cd noir/blinded_query_proof && nargo test
     cd noir/verified_oprf_proof && nargo test
-    cd noir/vc_blinded_query_auth_proof && nargo test
-    cd noir/vc_oprf_enrollment_proof && nargo compile --skip-brillig-constraints-check
+    cd ../circuits/vc_blinded_query_auth_proof && nargo test
+    cd ../circuits/vc_oprf_enrollment_proof && nargo compile --skip-underconstrained-check

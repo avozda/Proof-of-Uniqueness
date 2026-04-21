@@ -133,7 +133,7 @@ This module verifies a VC ownership ZK proof and derives the OPRF input from the
 ## VC+OPRF Enrollment Proof (On-Chain Ready Artifacts)
 
 The combined Noir circuit for on-chain enrollment lives at:
-`noir/vc_oprf_enrollment_proof/src/main.nr`
+`../circuits/vc_oprf_enrollment_proof/src/main.nr`
 
 It enforces in one proof that:
 1. VC signatures and field constraints are valid
@@ -153,7 +153,7 @@ Public signals exposed for contract verification:
 10. `nullifier` (proof return value)
 
 Generated EVM verifier artifact:
-`noir/vc_oprf_enrollment_proof/target/VcOprfEnrollmentUltraVerifier.sol`
+`../circuits/vc_oprf_enrollment_proof/target/VcOprfEnrollmentUltraVerifier.sol`
 
 ## Understanding the Results  
 

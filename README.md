@@ -19,6 +19,10 @@ src/
 ├── client/
 │   ├── public/circuits/
 │   └── src/
+├── circuits/
+│   ├── vc_blinded_query_auth_proof/
+│   ├── vc_oprf_enrollment_proof/
+│   └── vc_revocation_proof/
 ├── oprf-testnet/
 │   └── noir/
 └── smart-contracts/
@@ -53,4 +57,5 @@ Open `http://localhost:5173`.
 ## Notes
 
 - Enrollment/revocation artifacts consumed by the client are in `src/client/public/circuits`.
+- VC Noir circuit sources are in `src/circuits`.
 - If circuits/public signals change, regenerate Noir artifacts, verifier contracts, and redeploy `IdentityRegistry`.

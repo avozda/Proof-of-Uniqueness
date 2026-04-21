@@ -242,7 +242,7 @@ async function loadCircuitArtifact(): Promise<CompiledCircuit> {
   const res = await fetch("/circuits/vc_oprf_enrollment_proof.json");
   if (!res.ok) {
     throw new Error(
-      "Missing /circuits/vc_oprf_enrollment_proof.json. Copy it from src/oprf-testnet/noir/vc_oprf_enrollment_proof/target/",
+      "Missing /circuits/vc_oprf_enrollment_proof.json. Copy it from src/circuits/vc_oprf_enrollment_proof/target/",
     );
   }
   return (await res.json()) as CompiledCircuit;
@@ -252,7 +252,7 @@ async function loadVcBlindedQueryAuthCircuitArtifact(): Promise<CompiledCircuit>
   const res = await fetch("/circuits/vc_blinded_query_auth_proof.json");
   if (!res.ok) {
     throw new Error(
-      "Missing /circuits/vc_blinded_query_auth_proof.json. Copy it from src/oprf-testnet/noir/vc_blinded_query_auth_proof/target/",
+      "Missing /circuits/vc_blinded_query_auth_proof.json. Copy it from src/circuits/vc_blinded_query_auth_proof/target/",
     );
   }
   return (await res.json()) as CompiledCircuit;
@@ -262,7 +262,7 @@ async function loadVcRevocationCircuitArtifact(): Promise<CompiledCircuit> {
   const res = await fetch("/circuits/vc_revocation_proof.json");
   if (!res.ok) {
     throw new Error(
-      "Missing /circuits/vc_revocation_proof.json. Copy it from src/oprf-testnet/noir/vc_revocation_proof/target/",
+      "Missing /circuits/vc_revocation_proof.json. Copy it from src/circuits/vc_revocation_proof/target/",
     );
   }
   return (await res.json()) as CompiledCircuit;
