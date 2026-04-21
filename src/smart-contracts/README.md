@@ -4,7 +4,6 @@ Foundry project containing:
 
 - `IdentityRegistry.sol`
 - `VcOprfEnrollmentUltraVerifier.sol` (VC + OPRF enrollment)
-- `VcRevocationUltraVerifier.sol` (holder-signature revocation)
 
 ## Commands
 
@@ -58,7 +57,7 @@ If your terminal is non-interactive and prompts still fail, add:
 
 ## Notes
 
-- `IdentityRegistry` expects an Ultra verifier address and an initial trusted OPRF public key `(oprfPkX, oprfPkY)` in constructor.
+- `IdentityRegistry` expects an Ultra enrollment verifier address and an initial trusted OPRF public key `(oprfPkX, oprfPkY)` in constructor.
 - Enrollment public signals are expected as:
   1. `oprfPkX`
   2. `oprfPkY`
@@ -70,15 +69,12 @@ If your terminal is non-interactive and prompts still fail, add:
   8. `oprfKeyId`
   9. `oprfEpoch`
   10. `nullifier` (proof return value)
-- Revocation public signals are expected as:
-  1. `nullifier`
-  2. `holderPubKeyX`
-  3. `holderPubKeyY`
-  4. `challengeBlockHash` (`blockhash(challengeBlockNumber) % SNARK_SCALAR_FIELD`)
+- Enrollment also stores a wallet `revocationAddress`; that wallet must sign the enrollment authorization.
+- Revocation is authorized by an EIP-712 wallet signature over `nullifier` and `deadline`.
 - Trusted issuers are stored as `keccak256(issuerPubKeyX, issuerPubKeyY)` hashes.
 - Trusted OPRF public key is enforced on `enroll(...)` by matching signals `oprfPkX/oprfPkY` to contract state.
 - Owners can rotate trusted OPRF key with `setTrustedOprfPublicKey(pkX, pkY)`.
-- Revocation uses zk proof + fresh challenge block (`revoke(proof, publicSignals, challengeBlockNumber)`) and checks holder pubkey against stored identity.
+- Revocation uses `revoke(nullifier, deadline, signature)` and checks the signature against the stored revocation address.
 - `script/IdentityRegistry.s.sol` supports env overrides:
   - `OPRF_PUB_KEY_X`
   - `OPRF_PUB_KEY_Y`

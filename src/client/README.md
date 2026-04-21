@@ -36,11 +36,11 @@ If missing or replaced by HTML (e.g. 404 fallback page), browser proving fails w
 - This app emits a simplified, demo-oriented VC 2.0-like JSON structure (not a full interoperability profile).
 - Kept minimum VC shape checks: `@context`, `type` includes `VerifiableCredential`, `issuer.id`, `credentialSubject.id`, and ISO `validFrom`/`validUntil`.
 - Full production items like hosted custom JSON-LD contexts, `credentialStatus`, and `credentialSchema` are intentionally out of scope for this mock.
-- Old Circom/Groth16 and revocation UI paths are removed from the frontend.
-- The frontend is OPRF-enrollment focused and submits `enroll(bytes,bytes32[])`.
+- Old Circom/Groth16 and zk revocation UI paths are removed from the frontend.
+- The frontend submits `enroll(bytes,bytes32[],address,bytes)` after the connected wallet signs an EIP-712 enrollment authorization.
 - OPRF package generation is strict and live-only: no scaffold fallback path.
 - The app uses browser-side Noir + Barretenberg generation with `/circuits/vc_oprf_enrollment_proof.json`.
-- Revocation uses browser-side Noir generation with `/circuits/vc_revocation_proof.json` and on-chain challenge block freshness checks.
+- Revocation uses an EIP-712 wallet signature checked directly by `IdentityRegistry.revoke(uint256,uint256,bytes)`.
 - VC payload no longer includes `holderBindingSignature`; holder key possession is proven with live signatures during auth/proving.
 - OPRF transcript/auth is `vc-ownership` only.
 - UI no longer exposes manual package import, transcript input, network config inputs, or strict-mode toggles.

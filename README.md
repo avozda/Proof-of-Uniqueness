@@ -1,6 +1,6 @@
 # Proof of Uniqueness
 
-Privacy-preserving identity enrollment and revocation on Ethereum using Noir + Barretenberg proofs and holder/issuer BabyJubJub EdDSA signatures.
+Privacy-preserving identity enrollment on Ethereum using Noir + Barretenberg proofs, holder/issuer BabyJubJub EdDSA signatures, and wallet-signed revocation.
 
 No legacy Circom/Groth16 path is supported.
 
@@ -8,9 +8,10 @@ No legacy Circom/Groth16 path is supported.
 
 1. Client generates holder keypair.
 2. Client creates VC and issuer signs VC Merkle root.
-3. Client generates enrollment proof and submits to `IdentityRegistry.enroll(...)`.
-4. Contract verifies proof + trusted issuer + trusted OPRF key, then stores identity record keyed by nullifier.
-5. For revocation, client generates revocation proof (fresh challenge block bound) and submits `IdentityRegistry.revoke(...)`.
+3. Client generates enrollment proof and asks the wallet to sign an enrollment authorization.
+4. Client submits `IdentityRegistry.enroll(...)`.
+5. Contract verifies proof + trusted issuer + trusted OPRF key, then stores identity record keyed by nullifier with the wallet revocation address.
+6. For revocation, the wallet signs an EIP-712 revocation authorization and submits `IdentityRegistry.revoke(...)`.
 
 ## Repository Structure
 
@@ -21,8 +22,7 @@ src/
 │   └── src/
 ├── circuits/
 │   ├── vc_blinded_query_auth_proof/
-│   ├── vc_oprf_enrollment_proof/
-│   └── vc_revocation_proof/
+│   └── vc_oprf_enrollment_proof/
 ├── oprf-testnet/
 │   └── noir/
 └── smart-contracts/
@@ -56,6 +56,6 @@ Open `http://localhost:5173`.
 
 ## Notes
 
-- Enrollment/revocation artifacts consumed by the client are in `src/client/public/circuits`.
+- Enrollment/auth artifacts consumed by the client are in `src/client/public/circuits`.
 - VC Noir circuit sources are in `src/circuits`.
 - If circuits/public signals change, regenerate Noir artifacts, verifier contracts, and redeploy `IdentityRegistry`.

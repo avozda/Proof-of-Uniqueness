@@ -6,8 +6,6 @@ import { Noir } from "@noir-lang/noir_js";
 import { BarretenbergBackend } from "@noir-lang/backend_barretenberg";
 
 const SIGNATURE_DOMAIN = "eddsa-bjj-poseidon-2024:v1";
-const REVOKE_DOMAIN_SEPARATOR =
-  581564822560125587885439217300392511509116045944773424422209198n;
 
 const FIELD_LABELS = [
   2118198470571567473536145588563504n,
@@ -185,34 +183,6 @@ function buildAuthInputs(eddsa, poseidon) {
   };
 }
 
-function buildRevocationInputs(eddsa, poseidon) {
-  const holderPrivateKey = Uint8Array.from(
-    Array.from({ length: 32 }, (_, i) => ((i + 7) * 19) % 256),
-  );
-  const holderPubPoint = eddsa.prv2pub(holderPrivateKey);
-  const holderPubKey = [
-    eddsa.F.toObject(holderPubPoint[0]),
-    eddsa.F.toObject(holderPubPoint[1]),
-  ];
-
-  const nullifier = 12345n;
-  const challengeBlockHash = 22222n;
-  const revokeMessage = hashN(
-    [REVOKE_DOMAIN_SEPARATOR, nullifier, challengeBlockHash],
-    poseidon,
-  );
-  const holderSig = signPoseidon(holderPrivateKey, revokeMessage, eddsa);
-
-  return {
-    nullifier: nullifier.toString(),
-    holder_pub_key_x: holderPubKey[0].toString(),
-    holder_pub_key_y: holderPubKey[1].toString(),
-    challenge_block_hash: challengeBlockHash.toString(),
-    holder_sig_r8: toStringArray(holderSig.R8),
-    holder_sig_s: holderSig.S.toString(),
-  };
-}
-
 function buildMicroBenchContext(eddsa, poseidon) {
   const signerPrivateKey = Uint8Array.from(
     Array.from({ length: 32 }, (_, i) => ((i + 31) * 5) % 256),
@@ -385,18 +355,11 @@ async function main() {
   const microBenchmarks = benchmarkMicroOperations(eddsa, poseidon, 3, 200);
 
   const authInputs = buildAuthInputs(eddsa, poseidon);
-  const revocationInputs = buildRevocationInputs(eddsa, poseidon);
 
   const authResult = await benchmarkCircuit(
     "./public/circuits/vc_blinded_query_auth_proof.json",
     authInputs,
     3,
-  );
-
-  const revocationResult = await benchmarkCircuit(
-    "./public/circuits/vc_revocation_proof.json",
-    revocationInputs,
-    5,
   );
 
   console.log(
@@ -405,7 +368,6 @@ async function main() {
         nodeVersion: process.version,
         microBenchmarks,
         authProof: authResult,
-        revocationProof: revocationResult,
       },
       null,
       2,

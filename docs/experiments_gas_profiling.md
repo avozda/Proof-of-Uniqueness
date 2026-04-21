@@ -2,10 +2,9 @@
 
 ## Objective
 
-This experiment measures the gas consumption of the current `IdentityRegistry.sol` implementation that verifies Noir/Ultra-based enrollment and revocation proofs and enforces OPRF-specific policy checks. The goal is to quantify both:
+This experiment measured the previous `IdentityRegistry.sol` implementation. The current contract keeps Noir/Ultra verification for enrollment and uses EIP-712 wallet signatures for revocation.
 
-1. storage/policy-path costs (isolated with mock verifiers), and
-2. full-path costs when generated Ultra verifiers are included in execution.
+The gas numbers below should be refreshed after the wallet-signed revocation migration.
 
 ## Methodology
 
@@ -21,7 +20,7 @@ This experiment measures the gas consumption of the current `IdentityRegistry.so
 ### 2) Test Contracts and Scenarios
 
 - `src/smart-contracts/test/IdentityRegistryGas.t.sol`
-  - Uses `MockUltraVerifier` and `MockRevocationVerifier` to isolate registry logic.
+  - Uses `MockUltraVerifier` to isolate enrollment verifier logic.
   - Covers success and revert paths for:
     - `enroll(...)`
     - `revoke(...)`
@@ -58,8 +57,8 @@ The measured enrollment path uses the current canonical 10-signal layout:
 | `addTrustedIssuer`                    | **47,414 gas (avg)**     | Owner operation                              |
 | `enroll` (global average)             | **243,245 gas (avg)**    | Mixed call set (success + revert paths)      |
 | `enroll` min / max                    | **25,790 / 265,128 gas** | Mixed reverting/success paths in test corpus |
-| `revoke` (global average)             | **42,168 gas (avg)**     | Mixed path average                           |
-| `revoke` min / max                    | **25,710 / 58,928 gas**  | Includes successful revocation path          |
+| `revoke` (previous zk path average)   | **42,168 gas (avg)**     | Obsolete after wallet-signature migration    |
+| `revoke` previous min / max           | **25,710 / 58,928 gas**  | Obsolete after wallet-signature migration    |
 | `setTrustedOprfPublicKey`             | **29,868 gas (avg)**     | OPRF trust anchor update                     |
 | `removeTrustedIssuer`                 | **25,416 gas (avg)**     | Owner operation                              |
 | `purgeInvalidRecords`                 | **53,166 gas (avg)**     | Permissionless maintenance path              |
@@ -90,7 +89,7 @@ From `forge build --sizes`:
 
 - `IdentityRegistry` runtime size: **6,345 bytes**
 - `UltraVerifier (VcOprfEnrollmentUltraVerifier.sol)` runtime size: **16,906 bytes**
-- `UltraVerifier (VcRevocationUltraVerifier.sol)` runtime size: **11,052 bytes**
+- Previous `UltraVerifier (VcRevocationUltraVerifier.sol)` runtime size: **11,052 bytes**; removed by the wallet-signature revocation migration.
 
 The repository keeps `code_size_limit = 50000` in Foundry config to avoid local deployment issues when verifier-heavy contracts are used in dev/test workflows.
 
@@ -109,4 +108,3 @@ forge test --gas-report
 forge test --match-test testEnrollmentScaling -vv
 forge build --sizes
 ```
-

@@ -16,9 +16,9 @@ This document describes the current end-to-end data flow for VC-based OPRF enrol
 8. Client outputs package:
    - `proof: 0x...`
    - `publicSignals: bytes32[10]`
-9. User submits package to `IdentityRegistry.enroll(proof, publicSignals)`.
+9. User signs an EIP-712 enrollment authorization with the revocation wallet and submits `IdentityRegistry.enroll(proof, publicSignals, revocationAddress, enrollmentSignature)`.
 10. Contract enforces signal structure + metadata + trust/expiry invariants and calls verifier.
-11. On success, identity is stored by `nullifier`.
+11. On success, identity is stored by `nullifier` with the bound revocation address.
 
 ## 2) Client-Side Flow (Detailed)
 
@@ -137,7 +137,7 @@ If these checks fail, authentication returns `ProofInvalid` (`4610`).
 
 Primary implementation: `src/smart-contracts/src/IdentityRegistry.sol`
 
-`enroll(bytes proof, bytes32[] publicSignals)` enforces:
+`enroll(bytes proof, bytes32[] publicSignals, address revocationAddress, bytes enrollmentSignature)` enforces:
 
 1. **Signal length**
    - exactly 10 public signals.
@@ -150,33 +150,33 @@ Primary implementation: `src/smart-contracts/src/IdentityRegistry.sol`
    - `oprfPkX/oprfPkY` in proof public signals must match contract-managed trusted key.
 5. **Verifier success**
    - catches verifier errors and reverts `InvalidProof`.
-6. **Business invariants**
+6. **Revocation address binding**
+  - `revocationAddress` is non-zero,
+  - `enrollmentSignature` is a valid EIP-712 signature from `revocationAddress` over `nullifier`, `publicSignalsHash`, `proofHash`, and `revocationAddress`.
+7. **Business invariants**
   - nullifier not already enrolled,
   - `validUntil` not expired,
   - issuer is in trusted issuer set.
 
 On success:
 
-- stores record in `identitiesByNullifier`.
+- stores record in `identitiesByNullifier`, including `revocationAddress`.
 - emits `IdentityEnrolled` with key metadata.
 
 ## 5b) Revocation Flow
 
 Primary implementation: `src/smart-contracts/src/IdentityRegistry.sol`
 
-`revoke(bytes proof, bytes32[] publicSignals, uint256 challengeBlockNumber)` enforces:
+`revoke(uint256 nullifier, uint256 deadline, bytes signature)` enforces:
 
-1. `publicSignals.length == 4` and all values are field-bounded.
-2. `challengeBlockNumber` is recent (`<= 10` blocks old) and valid.
-3. `challengeBlockHash` in proof signals matches `blockhash(challengeBlockNumber) % field_modulus`.
-4. Identity for `nullifier` exists.
-5. Holder pubkey in proof signals matches holder pubkey stored for that nullifier.
-6. Revocation verifier accepts the proof.
+1. Identity for `nullifier` exists.
+2. `deadline` has not expired.
+3. `signature` is a valid EIP-712 signature from the stored `revocationAddress` over `nullifier` and `deadline`.
 
 On success:
 
 - deletes `identitiesByNullifier[nullifier]`.
-- emits `IdentityRevoked(nullifier, challengeBlockNumber)`.
+- emits `IdentityRevoked(nullifier, revocationAddress)`.
 
 ## 6) Public Signal Layout (Canonical)
 
@@ -202,7 +202,12 @@ await writeContract({
   address: identityRegistry,
   abi: identityRegistryAbi,
   functionName: "enroll",
-  args: [proofPackage.proof, proofPackage.publicSignals],
+  args: [
+    proofPackage.proof,
+    proofPackage.publicSignals,
+    revocationAddress,
+    enrollmentSignature,
+  ],
 });
 ```
 
@@ -210,6 +215,7 @@ Where:
 
 - `proofPackage.proof` is `0x...` bytes.
 - `proofPackage.publicSignals` is `bytes32[10]` in canonical order.
+- `enrollmentSignature` is an EIP-712 signature from `revocationAddress`.
 
 ## 8) Common Failure Modes
 
@@ -231,6 +237,10 @@ Where:
   - `validUntil` already in the past.
 - `IdentityAlreadyExists()`:
   - nullifier already enrolled.
+- `InvalidEnrollmentAuthorization()`:
+  - wallet did not sign the enrollment binding for the submitted proof/signals.
+- `InvalidRevocationSignature()` / `RevocationSignatureExpired()`:
+  - revocation wallet signature is missing, wrong, or stale.
 
 ## 9) Security Intent Summary
 
@@ -240,3 +250,4 @@ Where:
 - Holder must prove live control of holder key for each OPRF request.
 - Final enrollment proof binds VC-derived identity and OPRF nullifier in one proof.
 - Contract only accepts trusted issuers and fixed OPRF key id for this module.
+- Revocation is not private: the nullifier is public, and authorization is a direct wallet signature from the stored revocation address.

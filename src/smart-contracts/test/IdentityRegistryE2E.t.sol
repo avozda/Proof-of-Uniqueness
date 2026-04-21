@@ -11,23 +11,12 @@ contract MockUltraVerifier {
     }
 }
 
-contract MockRevocationVerifier {
-    bool public verifyResult = true;
-
-    function setVerifyResult(bool result) external {
-        verifyResult = result;
-    }
-
-    function verify(bytes calldata, bytes32[] calldata) external view returns (bool) {
-        return verifyResult;
-    }
-}
-
 contract IdentityRegistryE2ETest is Test {
     uint256 internal constant ISSUER_X = 123;
     uint256 internal constant ISSUER_Y = 456;
     uint256 internal constant OPRF_PK_X = 111;
     uint256 internal constant OPRF_PK_Y = 222;
+    uint256 internal constant REVOCATION_PRIVATE_KEY = 0xA11CE;
 
     function _signals(uint256 nullifier, uint256 validUntil, uint256 issuerX, uint256 issuerY)
         internal
@@ -47,18 +36,33 @@ contract IdentityRegistryE2ETest is Test {
         s[9] = bytes32(nullifier);
     }
 
+    function _revocationAddress() internal view returns (address) {
+        return vm.addr(REVOCATION_PRIVATE_KEY);
+    }
+
+    function _sign(uint256 privateKey, bytes32 digest) internal view returns (bytes memory signature) {
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    function _enroll(IdentityRegistry registry, bytes memory proof, bytes32[] memory signals, address revocationAddress)
+        internal
+    {
+        bytes memory signature =
+            _sign(REVOCATION_PRIVATE_KEY, registry.hashEnrollmentAuthorization(proof, signals, revocationAddress));
+        registry.enroll(proof, signals, revocationAddress, signature);
+    }
+
     function testE2E_MockVerifier_EnrollAndReadBack() public {
         MockUltraVerifier mockVerifier = new MockUltraVerifier();
-        MockRevocationVerifier revocationVerifier = new MockRevocationVerifier();
-        IdentityRegistry registry =
-            new IdentityRegistry(address(mockVerifier), address(revocationVerifier), OPRF_PK_X, OPRF_PK_Y);
+        IdentityRegistry registry = new IdentityRegistry(address(mockVerifier), OPRF_PK_X, OPRF_PK_Y);
 
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
 
         bytes memory proof = hex"01";
         bytes32[] memory signals = _signals(777, block.timestamp + 3600, ISSUER_X, ISSUER_Y);
 
-        registry.enroll(proof, signals);
+        _enroll(registry, proof, signals, _revocationAddress());
 
         IdentityRegistry.IdentityRecord memory record = registry.getIdentity(777);
         assertEq(record.validUntil, block.timestamp + 3600);
@@ -68,6 +72,7 @@ contract IdentityRegistryE2ETest is Test {
         assertEq(record.holderPubKeyY, 67890);
         assertEq(record.oprfKeyId, 3);
         assertEq(record.oprfEpoch, 1);
+        assertEq(record.revocationAddress, _revocationAddress());
         assertTrue(record.exists);
         assertTrue(registry.isIdentityValid(777));
         assertEq(registry.getIdentityCount(), 1);
@@ -75,9 +80,7 @@ contract IdentityRegistryE2ETest is Test {
 
     function testE2E_RealUltraVerifier_RejectsMalformedProof() public {
         VcOprfEnrollmentUltraVerifier realVerifier = new VcOprfEnrollmentUltraVerifier();
-        MockRevocationVerifier revocationVerifier = new MockRevocationVerifier();
-        IdentityRegistry registry =
-            new IdentityRegistry(address(realVerifier), address(revocationVerifier), OPRF_PK_X, OPRF_PK_Y);
+        IdentityRegistry registry = new IdentityRegistry(address(realVerifier), OPRF_PK_X, OPRF_PK_Y);
 
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
 
@@ -85,14 +88,12 @@ contract IdentityRegistryE2ETest is Test {
         bytes32[] memory signals = _signals(888, block.timestamp + 3600, ISSUER_X, ISSUER_Y);
 
         vm.expectRevert(IdentityRegistry.InvalidProof.selector);
-        registry.enroll(malformedProof, signals);
+        registry.enroll(malformedProof, signals, _revocationAddress(), hex"01");
     }
 
     function testE2E_RevertOnUntrustedOprfKey() public {
         MockUltraVerifier mockVerifier = new MockUltraVerifier();
-        MockRevocationVerifier revocationVerifier = new MockRevocationVerifier();
-        IdentityRegistry registry =
-            new IdentityRegistry(address(mockVerifier), address(revocationVerifier), OPRF_PK_X, OPRF_PK_Y);
+        IdentityRegistry registry = new IdentityRegistry(address(mockVerifier), OPRF_PK_X, OPRF_PK_Y);
 
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
 
@@ -101,26 +102,19 @@ contract IdentityRegistryE2ETest is Test {
         signals[0] = bytes32(uint256(OPRF_PK_X + 1));
 
         vm.expectRevert(IdentityRegistry.UntrustedOprfPublicKey.selector);
-        registry.enroll(proof, signals);
+        registry.enroll(proof, signals, _revocationAddress(), hex"01");
     }
 
     function testE2E_RevokeDeletesIdentity() public {
         MockUltraVerifier mockVerifier = new MockUltraVerifier();
-        MockRevocationVerifier revocationVerifier = new MockRevocationVerifier();
-        IdentityRegistry registry =
-            new IdentityRegistry(address(mockVerifier), address(revocationVerifier), OPRF_PK_X, OPRF_PK_Y);
+        IdentityRegistry registry = new IdentityRegistry(address(mockVerifier), OPRF_PK_X, OPRF_PK_Y);
 
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
-        registry.enroll(hex"01", _signals(777, block.timestamp + 3600, ISSUER_X, ISSUER_Y));
+        _enroll(registry, hex"01", _signals(777, block.timestamp + 3600, ISSUER_X, ISSUER_Y), _revocationAddress());
 
-        uint256 challengeBlock = block.number - 1;
-        bytes32[] memory revokeSignals = new bytes32[](4);
-        revokeSignals[0] = bytes32(uint256(777));
-        revokeSignals[1] = bytes32(uint256(12345));
-        revokeSignals[2] = bytes32(uint256(67890));
-        revokeSignals[3] = bytes32(uint256(blockhash(challengeBlock)) % 21888242871839275222246405745257275088548364400416034343698204186575808495617);
-
-        registry.revoke(hex"01", revokeSignals, challengeBlock);
+        uint256 deadline = block.timestamp + 1 hours;
+        bytes memory signature = _sign(REVOCATION_PRIVATE_KEY, registry.hashRevocationAuthorization(777, deadline));
+        registry.revoke(777, deadline, signature);
 
         vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
         registry.getIdentity(777);

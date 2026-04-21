@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import {
   useAccount,
+  useChainId,
   useConnect,
   useDisconnect,
   useReadContract,
+  useSignTypedData,
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
 import { injected } from "wagmi/connectors";
+import { concatHex, keccak256, type Address, type Hex } from "viem";
 
 import type { VerifiableCredential } from "../lib/vc";
 import type { HolderKeyPair } from "../lib/holderKey";
@@ -16,10 +19,30 @@ import { formatIdentityRegistryTxError } from "../lib/contractErrors";
 import { CONTRACT_ADDRESSES } from "../lib/wagmi";
 import {
   buildVcOprfEnrollmentProofPackage,
-  buildVcRevocationProofPackage,
   type OprfNetworkConfig,
   type VcOprfEnrollmentProofPackage,
 } from "../lib/oprfEnrollment";
+
+const EIP712_DOMAIN = {
+  name: "IdentityRegistry",
+  version: "1",
+} as const;
+
+const ENROLL_TYPES = {
+  Enroll: [
+    { name: "nullifier", type: "uint256" },
+    { name: "publicSignalsHash", type: "bytes32" },
+    { name: "proofHash", type: "bytes32" },
+    { name: "revocationAddress", type: "address" },
+  ],
+} as const;
+
+const REVOKE_TYPES = {
+  Revoke: [
+    { name: "nullifier", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+} as const;
 
 interface ZKProofSectionProps {
   credential: VerifiableCredential;
@@ -42,6 +65,7 @@ export function ZKProofSection({
   const [revocationStatus, setRevocationStatus] = useState<string | null>(null);
 
   const contractAddress = CONTRACT_ADDRESSES.identityRegistry;
+  const chainId = useChainId();
   const networkConfig: OprfNetworkConfig = {
     nodeBases: ["http://127.0.0.1:10000", "http://127.0.0.1:10001", "http://127.0.0.1:10002"],
     threshold: 2,
@@ -56,6 +80,7 @@ export function ZKProofSection({
   const { address, isConnected } = useAccount();
   const { connect, isPending: isConnecting } = useConnect();
   const { disconnect } = useDisconnect();
+  const { signTypedDataAsync } = useSignTypedData();
 
   const {
     writeContract,
@@ -150,68 +175,38 @@ export function ZKProofSection({
     }
   };
 
+  const buildTypedDataDomain = () => ({
+    ...EIP712_DOMAIN,
+    chainId,
+    verifyingContract: contractAddress as Address,
+  });
+
   const handleRevokeIdentity = async () => {
-    if (!proofPackage || !contractAddressValid) return;
+    if (!proofPackage || !contractAddressValid || !address) return;
     setIsRevoking(true);
-    setRevocationStatus("Fetching latest challenge block...");
+    setRevocationStatus("Requesting revocation signature...");
     setProofError(null);
     resetRevokeSubmit();
 
     try {
-      const blockNumberResp = await fetch("http://127.0.0.1:8545", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "eth_blockNumber",
-          params: [],
-        }),
+      const nullifier = BigInt(proofPackage.decoded.nullifier);
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 10 * 60);
+      const signature = await signTypedDataAsync({
+        domain: buildTypedDataDomain(),
+        types: REVOKE_TYPES,
+        primaryType: "Revoke",
+        message: {
+          nullifier,
+          deadline,
+        },
       });
-      const blockNumberJson = (await blockNumberResp.json()) as {
-        result?: string;
-      };
-      if (!blockNumberJson.result) throw new Error("Failed to read latest block number");
-      const latest = BigInt(blockNumberJson.result);
-      if (latest <= 1n) throw new Error("Chain has insufficient blocks for challenge");
-      const challengeBlock = latest - 1n;
-
-      setRevocationStatus("Fetching challenge block hash...");
-      const blockResp = await fetch("http://127.0.0.1:8545", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 2,
-          method: "eth_getBlockByNumber",
-          params: [`0x${challengeBlock.toString(16)}`, false],
-        }),
-      });
-      const blockJson = (await blockResp.json()) as {
-        result?: { hash?: string };
-      };
-      const blockHashHex = blockJson.result?.hash;
-      if (!blockHashHex || !/^0x[0-9a-fA-F]{64}$/.test(blockHashHex)) {
-        throw new Error("Failed to fetch challenge block hash");
-      }
-      const FIELD_MODULUS =
-        21888242871839275222246405745257275088548364400416034343698204186575808495617n;
-      const challengeHashField = BigInt(blockHashHex) % FIELD_MODULUS;
-
-      const pkg = await buildVcRevocationProofPackage(
-        BigInt(proofPackage.decoded.nullifier),
-        holderKeyPair,
-        challengeHashField,
-        challengeBlock,
-        (message) => setRevocationStatus(message),
-      );
 
       setRevocationStatus("Submitting revocation transaction...");
       writeRevokeContract({
         address: contractAddress,
         abi: identityRegistryAbi,
         functionName: "revoke",
-        args: [pkg.proof, pkg.publicSignals, pkg.challengeBlockNumber],
+        args: [nullifier, deadline, signature],
       });
       setRevocationStatus("Revocation transaction submitted. Waiting for confirmation...");
       setIsRevoking(false);
@@ -234,8 +229,8 @@ export function ZKProofSection({
     });
   };
 
-  const handleSubmitToContract = () => {
-    if (!proofPackage) return;
+  const handleSubmitToContract = async () => {
+    if (!proofPackage || !address) return;
     if (!contractAddressValid) {
       setProofError("IdentityRegistry address is not configured correctly.");
       return;
@@ -243,12 +238,33 @@ export function ZKProofSection({
 
     resetSubmit();
     setIsEnrolling(true);
-    writeContract({
-      address: contractAddress,
-      abi: identityRegistryAbi,
-      functionName: "enroll",
-      args: [proofPackage.proof, proofPackage.publicSignals],
-    });
+    try {
+      const signature = await signTypedDataAsync({
+        domain: buildTypedDataDomain(),
+        types: ENROLL_TYPES,
+        primaryType: "Enroll",
+        message: {
+          nullifier: BigInt(proofPackage.decoded.nullifier),
+          publicSignalsHash: keccak256(concatHex(proofPackage.publicSignals as Hex[])),
+          proofHash: keccak256(proofPackage.proof),
+          revocationAddress: address,
+        },
+      });
+      writeContract({
+        address: contractAddress,
+        abi: identityRegistryAbi,
+        functionName: "enroll",
+        args: [
+          proofPackage.proof,
+          proofPackage.publicSignals,
+          address,
+          signature,
+        ],
+      });
+    } catch (err) {
+      setIsEnrolling(false);
+      setProofError(err instanceof Error ? err.message : "Enrollment signature failed");
+    }
   };
 
   const txFailedOnChain =
