@@ -1,4 +1,0 @@
-@openzeppelin/contracts/=lib/openzeppelin-contracts-upgradeable/lib/openzeppelin-contracts/contracts/
-@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
-@taceo/babyjubjub/=lib/babyjubjub-solidity/src/
-

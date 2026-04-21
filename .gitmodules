@@ -1,0 +1,3 @@
+[submodule "src/oprf-testnet"]
+	path = src/oprf-testnet
+	url = https://github.com/avozda/oprf-testnet.git
