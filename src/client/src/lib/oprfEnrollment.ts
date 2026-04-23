@@ -23,7 +23,7 @@ import type { VerifiableCredential } from "./vc";
 import type { HolderKeyPair } from "./holderKey";
 import {
   buildHolderOprfAuthMessage,
-  buildRevokeChallengeMessage,
+  requestIdToField,
   signMessageWithHolderKey,
 } from "./holderKey";
 import {
@@ -32,7 +32,6 @@ import {
   dateToField,
   decodeProofValue,
   extractPublicKeyFromVerificationMethod,
-  getDomainSeparator,
   poseidonHash,
   sexToField,
   stringToField,
@@ -95,25 +94,9 @@ export interface VcOprfEnrollmentProofPackage {
     oprfPkX: string;
     oprfPkY: string;
     validUntil: string;
-    holderPubKeyX: string;
-    holderPubKeyY: string;
     issuerPubKeyX: string;
     issuerPubKeyY: string;
-    oprfKeyId: string;
-    oprfEpoch: string;
     nullifier: string;
-  };
-}
-
-export interface VcRevocationProofPackage {
-  proof: `0x${string}`;
-  publicSignals: `0x${string}`[];
-  challengeBlockNumber: bigint;
-  decoded: {
-    nullifier: string;
-    holderPubKeyX: string;
-    holderPubKeyY: string;
-    challengeBlockHash: string;
   };
 }
 
@@ -124,7 +107,13 @@ export interface OprfNetworkConfig {
   authModule: "vc-ownership";
 }
 
-type ProgressReporter = (message: string) => void;
+export interface ProgressEvent {
+  type: "start" | "complete";
+  step: string;
+  durationMs?: number;
+}
+
+type ProgressReporter = (event: ProgressEvent) => void;
 
 type OprfTranscriptInput = {
   beta: bigint;
@@ -136,8 +125,6 @@ type OprfTranscriptInput = {
   oprfResponseBlindedY: bigint;
   oprfResponseX: bigint;
   oprfResponseY: bigint;
-  oprfKeyId: bigint;
-  oprfEpoch: bigint;
 };
 
 function toHex(bytes: Uint8Array): `0x${string}` {
@@ -148,7 +135,8 @@ function toHex(bytes: Uint8Array): `0x${string}` {
 
 function toBytes32Hex(value: bigint): `0x${string}` {
   if (value < 0n) throw new Error("Negative values are not allowed");
-  if (value >= FIELD_MODULUS) throw new Error("Signal value exceeds field modulus");
+  if (value >= FIELD_MODULUS)
+    throw new Error("Signal value exceeds field modulus");
   return `0x${value.toString(16).padStart(64, "0")}`;
 }
 
@@ -199,6 +187,7 @@ function padMerkleLeaves(leaves: bigint[]): bigint[] {
 }
 
 function buildFieldValuesOrdered(vc: VerifiableCredential): bigint[] {
+  // Keep this order aligned with VC_FIELD_LABELS and the Noir circuit inputs.
   const s = vc.credentialSubject;
   return [
     BigInt(s.holderPublicKey.x),
@@ -208,7 +197,6 @@ function buildFieldValuesOrdered(vc: VerifiableCredential): bigint[] {
     stringToField(vc.issuer.id),
     stringToField(s.name),
     stringToField(s.nationality),
-    BigInt(s.permanentAddressHash.value),
     stringToField(s.placeOfBirth),
     sexToField(s.sex),
     dateToField(vc.validFrom),
@@ -230,7 +218,9 @@ function decodeIssuerSig(vc: VerifiableCredential): {
   signatureS: bigint;
 } {
   const sig = decodeProofValue(vc.proof.proofValue);
-  const pk = extractPublicKeyFromVerificationMethod(vc.proof.verificationMethod);
+  const pk = extractPublicKeyFromVerificationMethod(
+    vc.proof.verificationMethod,
+  );
   return {
     signerPubKey: [BigInt(pk.x), BigInt(pk.y)],
     signatureR8: [BigInt(sig.signatureR8[0]), BigInt(sig.signatureR8[1])],
@@ -242,7 +232,7 @@ async function loadCircuitArtifact(): Promise<CompiledCircuit> {
   const res = await fetch("/circuits/vc_oprf_enrollment_proof.json");
   if (!res.ok) {
     throw new Error(
-      "Missing /circuits/vc_oprf_enrollment_proof.json. Copy it from src/oprf-testnet/noir/vc_oprf_enrollment_proof/target/",
+      "Missing /circuits/vc_oprf_enrollment_proof.json. Copy it from src/circuits/vc_oprf_enrollment_proof/target/",
     );
   }
   return (await res.json()) as CompiledCircuit;
@@ -252,35 +242,40 @@ async function loadVcBlindedQueryAuthCircuitArtifact(): Promise<CompiledCircuit>
   const res = await fetch("/circuits/vc_blinded_query_auth_proof.json");
   if (!res.ok) {
     throw new Error(
-      "Missing /circuits/vc_blinded_query_auth_proof.json. Copy it from src/oprf-testnet/noir/vc_blinded_query_auth_proof/target/",
+      "Missing /circuits/vc_blinded_query_auth_proof.json. Copy it from src/circuits/vc_blinded_query_auth_proof/target/",
     );
   }
   return (await res.json()) as CompiledCircuit;
 }
 
-async function loadVcRevocationCircuitArtifact(): Promise<CompiledCircuit> {
-  const res = await fetch("/circuits/vc_revocation_proof.json");
-  if (!res.ok) {
-    throw new Error(
-      "Missing /circuits/vc_revocation_proof.json. Copy it from src/oprf-testnet/noir/vc_revocation_proof/target/",
-    );
-  }
-  return (await res.json()) as CompiledCircuit;
+async function withProgressStep<T>(
+  onProgress: ProgressReporter | undefined,
+  step: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  onProgress?.({ type: "start", step });
+  const startedAt = performance.now();
+  const result = await fn();
+  onProgress?.({
+    type: "complete",
+    step,
+    durationMs: performance.now() - startedAt,
+  });
+  return result;
 }
 
 function computeHashIdFromVc(vc: VerifiableCredential): bigint {
+  // Hash only the identity fields that define uniqueness, not the full VC payload.
   const fieldValues = buildFieldValuesOrdered(vc);
   return normalizeField(
     poseidonHash([
-      fieldValues[12],
       fieldValues[2],
       fieldValues[5],
       fieldValues[3],
-      fieldValues[8],
-      fieldValues[9],
-      fieldValues[6],
       fieldValues[7],
-      fieldValues[10],
+      fieldValues[8],
+      fieldValues[6],
+      fieldValues[9],
     ]),
   );
 }
@@ -294,31 +289,36 @@ function buildNoirInputs(
   const fieldValues = buildFieldValuesOrdered(vc);
   const merkleLeaves = buildMerkleLeaves(fieldValues);
   const issuerSig = decodeIssuerSig(vc);
-  const hashId = computeHashIdFromVc(vc);
-  const holderBindSig = signMessageWithHolderKey(holderKeyPair.privateKey, hashId);
-
   const holderX = BigInt(vc.credentialSubject.holderPublicKey.x);
   const holderY = BigInt(vc.credentialSubject.holderPublicKey.y);
-  if (holderX !== holderKeyPair.publicKey.x || holderY !== holderKeyPair.publicKey.y) {
+  if (
+    holderX !== holderKeyPair.publicKey.x ||
+    holderY !== holderKeyPair.publicKey.y
+  ) {
     throw new Error("Holder key in VC does not match active holder keypair");
   }
-  if (issuerSig.signerPubKey[0] !== issuerPublicKey.x || issuerSig.signerPubKey[1] !== issuerPublicKey.y) {
+  if (
+    issuerSig.signerPubKey[0] !== issuerPublicKey.x ||
+    issuerSig.signerPubKey[1] !== issuerPublicKey.y
+  ) {
     throw new Error("Issuer key in VC proof does not match active issuer key");
   }
 
-  if (fieldValues[11] <= 0n) {
+  if (fieldValues[10] <= 0n) {
     throw new Error("validUntil field is not a positive unix timestamp");
   }
 
-  const debugInputs = {
-    domain_separator: getDomainSeparator().toString(),
+  const hashId = computeHashIdFromVc(vc);
+  const holderSig = signMessageWithHolderKey(holderKeyPair.privateKey, hashId);
+
+  return {
     merkle_leaves: merkleLeaves.map((x) => x.toString()),
     field_values: fieldValues.map((x) => x.toString()),
     signer_pub_key: issuerSig.signerPubKey.map((x) => x.toString()),
     signature_r8: issuerSig.signatureR8.map((x) => x.toString()),
     signature_s: issuerSig.signatureS.toString(),
-    holder_signature_r8: holderBindSig.R8.map((x) => normalizeField(x).toString()),
-    holder_signature_s: normalizeField(holderBindSig.S).toString(),
+    holder_signature_r8: holderSig.R8.map((x) => normalizeField(x).toString()),
+    holder_signature_s: normalizeField(holderSig.S).toString(),
     beta: transcript.beta.toString(),
     oprf_pk: {
       x: transcript.oprfPkX.toString(),
@@ -334,15 +334,10 @@ function buildNoirInputs(
       x: transcript.oprfResponseX.toString(),
       y: transcript.oprfResponseY.toString(),
     },
-    valid_until: fieldValues[11].toString(),
-    holder_pub_key_x: holderX.toString(),
-    holder_pub_key_y: holderY.toString(),
+    valid_until: fieldValues[10].toString(),
     issuer_pub_key_x: issuerPublicKey.x.toString(),
     issuer_pub_key_y: issuerPublicKey.y.toString(),
-    oprf_key_id: transcript.oprfKeyId.toString(),
-    oprf_epoch: transcript.oprfEpoch.toString(),
   };
-  return debugInputs;
 }
 
 async function generateWithNoir(
@@ -374,7 +369,11 @@ async function generateWithNoir(
         .decode(bytes.slice(0, 16))
         .replace(/\s+/g, " ");
       const contentType = response.headers.get("content-type") ?? "<none>";
-      const isWasmMagic = bytes[0] === 0x00 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d;
+      const isWasmMagic =
+        bytes[0] === 0x00 &&
+        bytes[1] === 0x61 &&
+        bytes[2] === 0x73 &&
+        bytes[3] === 0x6d;
 
       void magic;
       void prefixText;
@@ -396,6 +395,7 @@ async function generateWithNoir(
 
     let response: Response;
 
+    // Rewrite bb.js runtime asset requests to the public files Vite serves at root.
     if (requested.includes("barretenberg-threads.wasm")) {
       response = await realBbFetch("/barretenberg-threads.wasm", init);
       await inspectWasmResponse(response);
@@ -436,7 +436,10 @@ async function generateWithNoir(
         "Constraint unsatisfied while generating proof. This usually means the live OPRF transcript values are inconsistent with the enrollment circuit relations.",
       );
     }
-    if (m.includes("expected magic word") || m.includes("Incorrect response MIME type")) {
+    if (
+      m.includes("expected magic word") ||
+      m.includes("Incorrect response MIME type")
+    ) {
       throw new Error(
         "WASM asset loading failed for Noir runtime. Ensure /noirc_abi_wasm_bg.wasm and /acvm_js_bg.wasm are reachable and not rewritten by dev server.",
       );
@@ -467,7 +470,11 @@ async function generateWithNoir(
     return { verified, vkHash };
   };
 
-  const withTimeout = async <T>(label: string, ms: number, p: Promise<T>): Promise<T> => {
+  const withTimeout = async <T>(
+    label: string,
+    ms: number,
+    p: Promise<T>,
+  ): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
@@ -494,29 +501,31 @@ async function generateWithNoir(
     ).catch(wrapNoirError);
     void witness;
 
-    const backend = new BarretenbergBackend(circuit as never, BB_BACKEND_OPTIONS);
+    const backend = new BarretenbergBackend(
+      circuit as never,
+      BB_BACKEND_OPTIONS,
+    );
     try {
-      const proofData =
-        (await withTimeout(
-          "backend.generateProof",
-          180_000,
-          backend.generateProof(witness),
-        ).catch(wrapNoirError)) as RawProofData;
+      const proofData = (await withTimeout(
+        "backend.generateProof",
+        180_000,
+        backend.generateProof(witness),
+      ).catch(wrapNoirError)) as RawProofData;
       const selfCheck = await withTimeout(
         "backend.verifyProof",
         60_000,
         verifyInBackend(backend, proofData as RawProofData),
       ).catch(wrapNoirError);
       if (!selfCheck.verified) {
-        throw new Error("Local backend rejected the generated proof during self-check");
+        throw new Error(
+          "Local backend rejected the generated proof during self-check",
+        );
       }
 
       return proofData;
     } finally {
       await backend.destroy();
     }
-  } catch (err) {
-    throw err;
   } finally {
     globalThis.fetch = realBbFetch;
   }
@@ -526,32 +535,50 @@ function buildVcBlindedQueryAuthNoirInputs(
   vc: VerifiableCredential,
   issuerPublicKey: { x: bigint; y: bigint },
   holderKeyPair: HolderKeyPair,
+  requestId: string,
   beta: bigint,
+  blindedRequest: { x: bigint; y: bigint },
 ) {
+  // This witness proves the holder can authenticate the blinded OPRF request using the VC.
   const fieldValues = buildFieldValuesOrdered(vc);
   const merkleLeaves = buildMerkleLeaves(fieldValues);
   const issuerSig = decodeIssuerSig(vc);
-  const hashId = computeHashIdFromVc(vc);
-  const holderBindSig = signMessageWithHolderKey(holderKeyPair.privateKey, hashId);
+  const holderAuthMessage = buildHolderOprfAuthMessage(
+    requestId,
+    blindedRequest.x,
+    blindedRequest.y,
+  );
+  const holderRequestSig = signMessageWithHolderKey(
+    holderKeyPair.privateKey,
+    holderAuthMessage,
+  );
 
   const holderX = BigInt(vc.credentialSubject.holderPublicKey.x);
   const holderY = BigInt(vc.credentialSubject.holderPublicKey.y);
-  if (holderX !== holderKeyPair.publicKey.x || holderY !== holderKeyPair.publicKey.y) {
+  if (
+    holderX !== holderKeyPair.publicKey.x ||
+    holderY !== holderKeyPair.publicKey.y
+  ) {
     throw new Error("Holder key in VC does not match active holder keypair");
   }
-  if (issuerSig.signerPubKey[0] !== issuerPublicKey.x || issuerSig.signerPubKey[1] !== issuerPublicKey.y) {
+  if (
+    issuerSig.signerPubKey[0] !== issuerPublicKey.x ||
+    issuerSig.signerPubKey[1] !== issuerPublicKey.y
+  ) {
     throw new Error("Issuer key in VC proof does not match active issuer key");
   }
 
   return {
-    domain_separator: getDomainSeparator().toString(),
+    request_id_field: requestIdToField(requestId).toString(),
     merkle_leaves: merkleLeaves.map((x) => x.toString()),
     field_values: fieldValues.map((x) => x.toString()),
     signer_pub_key: issuerSig.signerPubKey.map((x) => x.toString()),
     signature_r8: issuerSig.signatureR8.map((x) => x.toString()),
     signature_s: issuerSig.signatureS.toString(),
-    holder_signature_r8: holderBindSig.R8.map((x) => normalizeField(x).toString()),
-    holder_signature_s: normalizeField(holderBindSig.S).toString(),
+    holder_signature_r8: holderRequestSig.R8.map((x) =>
+      normalizeField(x).toString(),
+    ),
+    holder_signature_s: normalizeField(holderRequestSig.S).toString(),
     beta: beta.toString(),
   };
 }
@@ -563,44 +590,52 @@ async function fetchLiveOprfTranscript(
   network: OprfNetworkConfig,
   onProgress?: ProgressReporter,
 ): Promise<OprfTranscriptInput> {
-  onProgress?.("Computing VC-derived private hash ID...");
-  const hashId = computeHashIdFromVc(vc);
-  const services = network.nodeBases.map((base) => toOprfUri(base, network.authModule));
+  const hashId = await withProgressStep(
+    onProgress,
+    "Compute VC-derived private hash ID",
+    async () => computeHashIdFromVc(vc),
+  );
+  const services = network.nodeBases.map((base) =>
+    toOprfUri(base, network.authModule),
+  );
   const beta = randomBlindingFactor();
   const blindedRequest = blindQuery(hashId, beta);
   const requestId = crypto.randomUUID();
 
-  onProgress?.("Building blinded-query auth proof witness...");
-  const vcCircuit = await loadVcBlindedQueryAuthCircuitArtifact();
-  const vcInputs = buildVcBlindedQueryAuthNoirInputs(
-    vc,
-    issuerPublicKey,
-    holderKeyPair,
-    beta,
+  const { vcCircuit, vcInputs } = await withProgressStep(
+    onProgress,
+    "Build blinded-query auth proof witness",
+    async () => {
+      const circuit = await loadVcBlindedQueryAuthCircuitArtifact();
+      const inputs = buildVcBlindedQueryAuthNoirInputs(
+        vc,
+        issuerPublicKey,
+        holderKeyPair,
+        requestId,
+        beta,
+        blindedRequest,
+      );
+      return { vcCircuit: circuit, vcInputs: inputs };
+    },
   );
 
-  const authPayload = await (async () => {
-    onProgress?.("Generating blinded-query auth proof for node authentication...");
-    const vcProofData = await generateWithNoir(vcCircuit, vcInputs);
-    const publicInputsBytes = publicInputsToBytes(vcProofData.publicInputs, "le");
-    const holderAuthMessage = buildHolderOprfAuthMessage(
-      requestId,
-      blindedRequest.x,
-      blindedRequest.y,
-    );
-    const holderSig = signMessageWithHolderKey(
-      holderKeyPair.privateKey,
-      holderAuthMessage,
-    );
-    return {
-      api_key: network.apiKey,
-      public_inputs: Array.from(publicInputsBytes),
-      proof: Array.from(vcProofData.proof),
-      holder_sig_r8x: holderSig.R8[0].toString(),
-      holder_sig_r8y: holderSig.R8[1].toString(),
-      holder_sig_s: holderSig.S.toString(),
-    };
-  })();
+  const authPayload = await withProgressStep(
+    onProgress,
+    "Generate blinded-query auth proof",
+    async () => {
+      // Nodes require a proof-backed auth payload before they will process the blinded query.
+      const vcProofData = await generateWithNoir(vcCircuit, vcInputs);
+      const publicInputsBytes = publicInputsToBytes(
+        vcProofData.publicInputs,
+        "le",
+      );
+      return {
+        api_key: network.apiKey,
+        public_inputs: Array.from(publicInputsBytes),
+        proof: Array.from(vcProofData.proof),
+      };
+    },
+  );
 
   const wrapOprfNodeErrors = (phase: string, err: unknown): never => {
     if (Array.isArray(err) && err.every((x) => isNodeError(x))) {
@@ -621,18 +656,29 @@ async function fetchLiveOprfTranscript(
     throw err instanceof Error ? err : new Error(String(err));
   };
 
-  onProgress?.("Opening OPRF sessions with nodes...");
-  const sessions = await initSessions(services, network.threshold, {
-    request_id: requestId,
-    blinded_query: blindedRequest,
-    auth: authPayload,
-  }).catch((err) => wrapOprfNodeErrors("session init", err));
-
-  onProgress?.("Collecting threshold OPRF responses...");
-  const challenge = generateChallengeRequest(sessions);
-  const proofShares = await finishSessions(sessions, challenge).catch((err) =>
-    wrapOprfNodeErrors("session finish", err),
+  const sessions = await withProgressStep(
+    onProgress,
+    "Open OPRF sessions with nodes",
+    async () =>
+      initSessions(services, network.threshold, {
+        request_id: requestId,
+        blinded_query: blindedRequest,
+        auth: authPayload,
+      }).catch((err) => wrapOprfNodeErrors("session init", err)),
   );
+
+  const { challenge, proofShares } = await withProgressStep(
+    onProgress,
+    "Collect threshold OPRF responses",
+    async () => {
+      const nextChallenge = generateChallengeRequest(sessions);
+      const nextProofShares = await finishSessions(sessions, nextChallenge).catch(
+        (err) => wrapOprfNodeErrors("session finish", err),
+      );
+      return { challenge: nextChallenge, proofShares: nextProofShares };
+    },
+  );
+  // Collapse threshold shares into one transcript we can verify locally and feed into Noir.
   const dlogProof = verifyDlogEquality(
     requestId,
     sessions.oprfPublicKeys[0],
@@ -682,14 +728,10 @@ async function fetchLiveOprfTranscript(
     oprfResponseBlindedY: normalizeField(blindedResponse.y),
     oprfResponseX: normalizeField(unblindedResponse.x),
     oprfResponseY: normalizeField(unblindedResponse.y),
-    oprfKeyId: 3n,
-    // Circuit and contract currently require non-zero metadata fields.
-    // Local OPRF sessions can report epoch=0, so clamp to 1 for now.
-    oprfEpoch: BigInt(Math.max(1, sessions.epoch)),
   };
 }
 
-export async function validateOprfNetworkConfig(
+async function validateOprfNetworkConfig(
   network: OprfNetworkConfig,
 ): Promise<void> {
   if (network.nodeBases.length < 1) {
@@ -701,20 +743,17 @@ export async function validateOprfNetworkConfig(
 }
 
 function decodeFromPublicSignals(signals: bigint[]) {
-  if (signals.length !== 10) {
-    throw new Error(`Expected 10 public signals, got ${signals.length}`);
+  if (signals.length !== 6) {
+    throw new Error(`Expected 6 public signals, got ${signals.length}`);
   }
+  // Mirror the public signal layout emitted by vc_oprf_enrollment_proof.
   return {
     oprfPkX: signals[0].toString(),
     oprfPkY: signals[1].toString(),
     validUntil: signals[2].toString(),
-    holderPubKeyX: signals[3].toString(),
-    holderPubKeyY: signals[4].toString(),
-    issuerPubKeyX: signals[5].toString(),
-    issuerPubKeyY: signals[6].toString(),
-    oprfKeyId: signals[7].toString(),
-    oprfEpoch: signals[8].toString(),
-    nullifier: signals[9].toString(),
+    issuerPubKeyX: signals[3].toString(),
+    issuerPubKeyY: signals[4].toString(),
+    nullifier: signals[5].toString(),
   };
 }
 
@@ -725,9 +764,9 @@ export async function buildVcOprfEnrollmentProofPackage(
   network: OprfNetworkConfig,
   onProgress?: ProgressReporter,
 ): Promise<VcOprfEnrollmentProofPackage> {
-  onProgress?.("Validating OPRF configuration...");
-  await validateOprfNetworkConfig(network);
-  onProgress?.("Fetching live OPRF transcript...");
+  await withProgressStep(onProgress, "Validate OPRF configuration", async () =>
+    validateOprfNetworkConfig(network),
+  );
   const transcript = await fetchLiveOprfTranscript(
     credential,
     issuerPublicKey,
@@ -736,83 +775,35 @@ export async function buildVcOprfEnrollmentProofPackage(
     onProgress,
   );
   try {
-    onProgress?.("Building enrollment witness and generating proof...");
-    const circuit = await loadCircuitArtifact();
-    assertCircuitCompatibility(circuit);
-    const noirInputs = buildNoirInputs(
-      credential,
-      issuerPublicKey,
-      holderKeyPair,
-      transcript,
+    const proofData = await withProgressStep(
+      onProgress,
+      "Build enrollment witness and generate proof",
+      async () => {
+        const circuit = await loadCircuitArtifact();
+        assertCircuitCompatibility(circuit);
+        const noirInputs = buildNoirInputs(
+          credential,
+          issuerPublicKey,
+          holderKeyPair,
+          transcript,
+        );
+
+        return generateWithNoir(circuit, noirInputs);
+      },
     );
 
-    const proofData = await generateWithNoir(circuit, noirInputs);
-
-    const publicSignalsBig = proofData.publicInputs.map((x) => normalizeField(BigInt(x)));
-    onProgress?.("Finalizing proof package...");
-    return {
+    const publicSignalsBig = proofData.publicInputs.map((x) =>
+      normalizeField(BigInt(x)),
+    );
+    return withProgressStep(onProgress, "Finalize proof package", async () => ({
       proof: toHex(proofData.proof),
       publicSignals: publicSignalsBig.map(toBytes32Hex),
       decoded: decodeFromPublicSignals(publicSignalsBig),
-    };
+    }));
   } catch (err) {
     if (err instanceof Error) {
       throw new Error(`OPRF package generation failed: ${err.message}`);
     }
     throw new Error("OPRF package generation failed");
   }
-}
-
-function decodeRevocationSignals(signals: bigint[]) {
-  if (signals.length !== 4) {
-    throw new Error("Revocation proof must expose exactly 4 public signals");
-  }
-  return {
-    nullifier: signals[0].toString(),
-    holderPubKeyX: signals[1].toString(),
-    holderPubKeyY: signals[2].toString(),
-    challengeBlockHash: signals[3].toString(),
-  };
-}
-
-export async function buildVcRevocationProofPackage(
-  nullifier: bigint,
-  holderKeyPair: HolderKeyPair,
-  challengeBlockHash: bigint,
-  challengeBlockNumber: bigint,
-  onProgress?: ProgressReporter,
-): Promise<VcRevocationProofPackage> {
-  onProgress?.("Loading revocation circuit...");
-  const circuit = await loadVcRevocationCircuitArtifact();
-  assertCircuitCompatibility(circuit);
-
-  const revokeMessage = buildRevokeChallengeMessage(
-    normalizeField(nullifier),
-    normalizeField(challengeBlockHash),
-  );
-  const revokeSig = signMessageWithHolderKey(holderKeyPair.privateKey, revokeMessage);
-
-  const inputs = {
-    nullifier: normalizeField(nullifier).toString(),
-    holder_pub_key_x: normalizeField(holderKeyPair.publicKey.x).toString(),
-    holder_pub_key_y: normalizeField(holderKeyPair.publicKey.y).toString(),
-    challenge_block_hash: normalizeField(challengeBlockHash).toString(),
-    holder_sig_r8: [
-      normalizeField(revokeSig.R8[0]).toString(),
-      normalizeField(revokeSig.R8[1]).toString(),
-    ],
-    holder_sig_s: normalizeField(revokeSig.S).toString(),
-  };
-
-  onProgress?.("Generating revocation proof...");
-  const proofData = await generateWithNoir(circuit, inputs);
-  const publicSignalsBig = proofData.publicInputs.map((x) => normalizeField(BigInt(x)));
-
-  onProgress?.("Finalizing revocation package...");
-  return {
-    proof: toHex(proofData.proof),
-    publicSignals: publicSignalsBig.map(toBytes32Hex),
-    challengeBlockNumber,
-    decoded: decodeRevocationSignals(publicSignalsBig),
-  };
 }

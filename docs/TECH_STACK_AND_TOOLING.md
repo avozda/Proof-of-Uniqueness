@@ -29,7 +29,7 @@ This document summarizes the technologies used in this repository and why each i
 
 ### Noir (ZK circuits)
 
-- Used for circuits in `src/oprf-testnet/noir/**`.
+- Used for VC circuits in `src/circuits/**` and TACEO OPRF example circuits/vendor libraries in `src/oprf-testnet/noir/**`.
 - Needed because:
   - expressive ZK circuit authoring for VC ownership and combined VC+OPRF constraints,
   - compatible with Barretenberg backend and generated EVM verifier flow.
@@ -41,7 +41,6 @@ This document summarizes the technologies used in this repository and why each i
 - Packages: `@noir-lang/noir_js`, `@noir-lang/backend_barretenberg` (client), plus Rust-side Noir tooling crates.
 - Needed because:
   - browser-side witness/proof generation for both auth proof and enrollment proof,
-  - browser-side witness/proof generation for revocation proof,
   - local proof verification/self-check before submission,
   - compatibility with Ultra/Barretenberg-generated verifier artifacts.
 
@@ -152,7 +151,7 @@ This document summarizes the technologies used in this repository and why each i
 
 ### Nargo / Noir toolchain
 
-- Circuits are defined with `Nargo.toml` in `src/oprf-testnet/noir/**`.
+- VC circuits are defined with `Nargo.toml` in `src/circuits/**`; TACEO OPRF example circuits remain under `src/oprf-testnet/noir/**`.
 - Needed because:
   - compile circuits to artifacts consumed by browser and verifier generation pipelines,
   - maintain reproducible circuit definitions and dependencies.

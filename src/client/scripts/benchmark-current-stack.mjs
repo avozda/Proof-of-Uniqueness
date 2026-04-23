@@ -4,10 +4,9 @@ import { performance } from "node:perf_hooks";
 import { buildEddsa, buildPoseidon } from "circomlibjs";
 import { Noir } from "@noir-lang/noir_js";
 import { BarretenbergBackend } from "@noir-lang/backend_barretenberg";
+import { blindQuery } from "@taceo/oprf-core";
 
-const SIGNATURE_DOMAIN = "eddsa-bjj-poseidon-2024:v1";
-const REVOKE_DOMAIN_SEPARATOR =
-  581564822560125587885439217300392511509116045944773424422209198n;
+const HOLDER_OPRF_AUTH_DOMAIN = "holder-bjj-oprf-auth:v1";
 
 const FIELD_LABELS = [
   2118198470571567473536145588563504n,
@@ -17,7 +16,6 @@ const FIELD_LABELS = [
   115944579229042n,
   1851878757n,
   133442057126172576218444921n,
-  641669309618204160221840285997001192639266124648n,
   34793344991585695257288930408n,
   7562616n,
   2183735902496290402157n,
@@ -39,14 +37,6 @@ function bytesToField(bytes) {
     v = (v << 8n) | BigInt(b);
   }
   return v;
-}
-
-function stringToFieldSimple(value) {
-  const bytes = new TextEncoder().encode(value);
-  if (bytes.length > 31) {
-    throw new Error(`string too long for simple field encoding: ${value}`);
-  }
-  return bytesToField(bytes);
 }
 
 function stringToField(value, poseidon) {
@@ -136,7 +126,6 @@ function buildAuthInputs(eddsa, poseidon) {
     stringToField("did:babyjubjub:test-issuer", poseidon),
     stringToField("Jan Novak", poseidon),
     stringToField("Czech", poseidon),
-    hashN([stringToField("Mala Strana 1, Prague", poseidon)], poseidon),
     stringToField("Prague", poseidon),
     0n,
     dateToField(validFromIso),
@@ -145,35 +134,45 @@ function buildAuthInputs(eddsa, poseidon) {
   ];
 
   const leaves = new Array(16).fill(0n);
-  for (let i = 0; i < 13; i += 1) {
+  for (let i = 0; i < 12; i += 1) {
     leaves[i] = hash2(FIELD_LABELS[i], fieldValues[i], poseidon);
   }
 
   const root = merkleRoot16(leaves, poseidon);
-  const domainSeparator = stringToFieldSimple(SIGNATURE_DOMAIN);
-  const signedMessage = hash2(domainSeparator, root, poseidon);
+  const signedMessage = hashN([root], poseidon);
 
   const issuerSig = signPoseidon(issuerPrivateKey, signedMessage, eddsa);
 
   const hashId = hashN(
     [
-      fieldValues[12],
       fieldValues[2],
       fieldValues[5],
       fieldValues[3],
-      fieldValues[8],
-      fieldValues[9],
-      fieldValues[6],
       fieldValues[7],
-      fieldValues[10],
+      fieldValues[8],
+      fieldValues[6],
+      fieldValues[9],
     ],
     poseidon,
   );
 
-  const holderSig = signPoseidon(holderPrivateKey, hashId, eddsa);
+  const requestId = "bench-request-1";
+  const requestIdField = stringToField(requestId, poseidon);
+  const beta = 123456789n;
+  const blinded = blindQuery(hashId, beta);
+  const holderAuthMessage = hashN(
+    [
+      stringToField(HOLDER_OPRF_AUTH_DOMAIN, poseidon),
+      requestIdField,
+      blinded.x,
+      blinded.y,
+    ],
+    poseidon,
+  );
+  const holderSig = signPoseidon(holderPrivateKey, holderAuthMessage, eddsa);
 
   return {
-    domain_separator: domainSeparator.toString(),
+    request_id_field: requestIdField.toString(),
     merkle_leaves: toStringArray(leaves),
     field_values: toStringArray(fieldValues),
     signer_pub_key: toStringArray(issuerPubKey),
@@ -181,35 +180,7 @@ function buildAuthInputs(eddsa, poseidon) {
     signature_s: issuerSig.S.toString(),
     holder_signature_r8: toStringArray(holderSig.R8),
     holder_signature_s: holderSig.S.toString(),
-    beta: "123456789",
-  };
-}
-
-function buildRevocationInputs(eddsa, poseidon) {
-  const holderPrivateKey = Uint8Array.from(
-    Array.from({ length: 32 }, (_, i) => ((i + 7) * 19) % 256),
-  );
-  const holderPubPoint = eddsa.prv2pub(holderPrivateKey);
-  const holderPubKey = [
-    eddsa.F.toObject(holderPubPoint[0]),
-    eddsa.F.toObject(holderPubPoint[1]),
-  ];
-
-  const nullifier = 12345n;
-  const challengeBlockHash = 22222n;
-  const revokeMessage = hashN(
-    [REVOKE_DOMAIN_SEPARATOR, nullifier, challengeBlockHash],
-    poseidon,
-  );
-  const holderSig = signPoseidon(holderPrivateKey, revokeMessage, eddsa);
-
-  return {
-    nullifier: nullifier.toString(),
-    holder_pub_key_x: holderPubKey[0].toString(),
-    holder_pub_key_y: holderPubKey[1].toString(),
-    challenge_block_hash: challengeBlockHash.toString(),
-    holder_sig_r8: toStringArray(holderSig.R8),
-    holder_sig_s: holderSig.S.toString(),
+    beta: beta.toString(),
   };
 }
 
@@ -235,7 +206,6 @@ function buildMicroBenchContext(eddsa, poseidon) {
     stringToField("did:babyjubjub:test-issuer", poseidon),
     stringToField("Jan Novak", poseidon),
     stringToField("Czech", poseidon),
-    hashN([stringToField("Mala Strana 1, Prague", poseidon)], poseidon),
     stringToField("Prague", poseidon),
     0n,
     dateToField("2026-04-09T12:00:00.000Z"),
@@ -244,15 +214,13 @@ function buildMicroBenchContext(eddsa, poseidon) {
   ];
 
   const hashIdInputs = [
-    fieldValues[12],
     fieldValues[2],
     fieldValues[5],
     fieldValues[3],
-    fieldValues[8],
-    fieldValues[9],
-    fieldValues[6],
     fieldValues[7],
-    fieldValues[10],
+    fieldValues[8],
+    fieldValues[6],
+    fieldValues[9],
   ];
 
   const signMessage = hashN(hashIdInputs, poseidon);
@@ -267,7 +235,7 @@ function buildMicroBenchContext(eddsa, poseidon) {
 
 function preprocessVcCommitment(fieldValues, poseidon) {
   const leaves = new Array(16).fill(0n);
-  for (let i = 0; i < 13; i += 1) {
+  for (let i = 0; i < 12; i += 1) {
     leaves[i] = hash2(FIELD_LABELS[i], fieldValues[i], poseidon);
   }
   return merkleRoot16(leaves, poseidon);
@@ -385,18 +353,11 @@ async function main() {
   const microBenchmarks = benchmarkMicroOperations(eddsa, poseidon, 3, 200);
 
   const authInputs = buildAuthInputs(eddsa, poseidon);
-  const revocationInputs = buildRevocationInputs(eddsa, poseidon);
 
   const authResult = await benchmarkCircuit(
     "./public/circuits/vc_blinded_query_auth_proof.json",
     authInputs,
     3,
-  );
-
-  const revocationResult = await benchmarkCircuit(
-    "./public/circuits/vc_revocation_proof.json",
-    revocationInputs,
-    5,
   );
 
   console.log(
@@ -405,7 +366,6 @@ async function main() {
         nodeVersion: process.version,
         microBenchmarks,
         authProof: authResult,
-        revocationProof: revocationResult,
       },
       null,
       2,

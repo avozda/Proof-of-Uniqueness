@@ -4,7 +4,6 @@ Foundry project containing:
 
 - `IdentityRegistry.sol`
 - `VcOprfEnrollmentUltraVerifier.sol` (VC + OPRF enrollment)
-- `VcRevocationUltraVerifier.sol` (holder-signature revocation)
 
 ## Commands
 
@@ -48,7 +47,7 @@ PRIVATE_KEY=0x... \
 ./script/deploy-identity-registry-dynamic-oprf.sh
 ```
 
-The script exports `OPRF_PUB_KEY_X` / `OPRF_PUB_KEY_Y` for `script/IdentityRegistry.s.sol`, which now reads these environment variables when present.
+The script exports `OPRF_PUB_KEY_X` / `OPRF_PUB_KEY_Y` for `script/IdentityRegistry.s.sol`, which reads these environment variables when present.
 
 If your terminal is non-interactive and prompts still fail, add:
 
@@ -56,32 +55,33 @@ If your terminal is non-interactive and prompts still fail, add:
 --skip-simulation
 ```
 
-## Notes
+## IdentityRegistry behavior
 
-- `IdentityRegistry` expects an Ultra verifier address and an initial trusted OPRF public key `(oprfPkX, oprfPkY)` in constructor.
-- Enrollment public signals are expected as:
+- **Constructor**: takes the Ultra enrollment verifier address and the initial trusted OPRF public key `(oprfPkX, oprfPkY)` (non-zero, in-circuit field range).
+- **Enrollment public signals** (length 6, each value `< SNARK_SCALAR_FIELD`):
   1. `oprfPkX`
   2. `oprfPkY`
   3. `validUntil`
-  4. `holderPubKeyX`
-  5. `holderPubKeyY`
-  6. `issuerPubKeyX`
-  7. `issuerPubKeyY`
-  8. `oprfKeyId`
-  9. `oprfEpoch`
-  10. `nullifier` (proof return value)
-- Revocation public signals are expected as:
-  1. `nullifier`
-  2. `holderPubKeyX`
-  3. `holderPubKeyY`
-  4. `challengeBlockHash` (`blockhash(challengeBlockNumber) % SNARK_SCALAR_FIELD`)
-- Trusted issuers are stored as `keccak256(issuerPubKeyX, issuerPubKeyY)` hashes.
-- Trusted OPRF public key is enforced on `enroll(...)` by matching signals `oprfPkX/oprfPkY` to contract state.
-- Owners can rotate trusted OPRF key with `setTrustedOprfPublicKey(pkX, pkY)`.
-- Revocation uses zk proof + fresh challenge block (`revoke(proof, publicSignals, challengeBlockNumber)`) and checks holder pubkey against stored identity.
-- `script/IdentityRegistry.s.sol` supports env overrides:
-  - `OPRF_PUB_KEY_X`
-  - `OPRF_PUB_KEY_Y`
-  If unset, it falls back to defaults defined in the script.
-- Contract hardening includes field-range checks, strict signal-length checks, and verifier revert handling.
-- If circuits/public signals change, regenerate verifiers and redeploy.
+  4. `issuerPubKeyX`
+  5. `issuerPubKeyY`
+  6. `nullifier` (proof return value; must be non-zero on-chain)
+- **Trusted OPRF key**: `oprfPkX` / `oprfPkY` in the signals must match `trustedOprfPkX` / `trustedOprfPkY`. Owners can rotate with `setTrustedOprfPublicKey(pkX, pkY)`.
+- **Trusted issuers**: `keccak256(abi.encodePacked(issuerPubKeyX, issuerPubKeyY))`. `addTrustedIssuer` rejects `(0, 0)`.
+- **Wallet binding**: `enroll` stores `walletAddress`. The same address must provide an **EIP-712** signature (`signTypedData` / EIP-712 v4) over the `Enroll` struct:
+  - `nullifier`, `publicSignalsHash` (`keccak256` of the packed `bytes32[]` public signals), `proofHash` (`keccak256` of proof bytes), `walletAddress`
+  - Domain: `name` `"IdentityRegistry"`, `version` `"1"`, `chainId`, `verifyingContract` = this registry  
+  On-chain, `hashEnrollmentAuthorization` returns the final digest; `domainSeparator()` matches that domain. Signature verification runs before the ZK verifier call (cheap failure on bad signatures).
+- **Revocation**: `revoke(nullifier, deadline, signature)` — EIP-712 `Revoke` over `nullifier` and `deadline` with the same domain; signer must be the stored `walletAddress`. `hashRevocationAuthorization` returns the digest to sign.
+- **Purge**: `purgeInvalidRecords()` scans the full historical nullifier list once per call and deletes records that are expired or whose issuer is no longer trusted.
+- **Hardening**: signal length and field-range checks, verifier `try/catch`, low-**s** signature checks.
+
+If circuits or public signal layout change, regenerate `VcOprfEnrollmentUltraVerifier.sol` from the circuit artifact and redeploy.
+
+## Script env overrides
+
+`script/IdentityRegistry.s.sol` supports:
+
+- `OPRF_PUB_KEY_X`
+- `OPRF_PUB_KEY_Y`
+
+If unset, it uses defaults in the script.

@@ -5,35 +5,32 @@ interface IVcOprfEnrollmentVerifier {
     function verify(bytes calldata _proof, bytes32[] calldata _publicInputs) external returns (bool);
 }
 
-interface IVcRevocationVerifier {
-    function verify(bytes calldata _proof, bytes32[] calldata _publicInputs) external view returns (bool);
-}
-
 contract IdentityRegistry {
+    // BN254 scalar field modulus used by the Noir/Barretenberg proof system.
     uint256 private constant SNARK_SCALAR_FIELD =
         21888242871839275222246405745257275088548364400416034343698204186575808495617;
+    // Upper bound for canonical low-s secp256k1 signatures to reject malleable signatures.
+    uint256 private constant SECP256K1_N_HALF = 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0;
+    bytes32 private constant ENROLL_TYPEHASH =
+        keccak256("Enroll(uint256 nullifier,bytes32 publicSignalsHash,bytes32 proofHash,address walletAddress)");
+    bytes32 private constant REVOKE_TYPEHASH = keccak256("Revoke(uint256 nullifier,uint256 deadline)");
 
     struct IdentityRecord {
         uint256 validUntil;
         uint256 issuerPubKeyX;
         uint256 issuerPubKeyY;
-        uint256 holderPubKeyX;
-        uint256 holderPubKeyY;
-        uint256 oprfKeyId;
-        uint256 oprfEpoch;
+        address walletAddress;
         bool exists;
     }
 
     struct EnrollmentSignals {
+        // Decoded public outputs from the enrollment circuit, kept in a struct so
+        // the rest of enroll() can work with named fields instead of raw indexes.
         uint256 oprfPkX;
         uint256 oprfPkY;
         uint256 validUntil;
-        uint256 holderPubKeyX;
-        uint256 holderPubKeyY;
         uint256 issuerPubKeyX;
         uint256 issuerPubKeyY;
-        uint256 oprfKeyId;
-        uint256 oprfEpoch;
         uint256 nullifier;
     }
 
@@ -41,58 +38,47 @@ contract IdentityRegistry {
     // 0: oprfPkX
     // 1: oprfPkY
     // 2: validUntil
-    // 3: holderPubKeyX
-    // 4: holderPubKeyY
-    // 5: issuerPubKeyX
-    // 6: issuerPubKeyY
-    // 7: oprfKeyId
-    // 8: oprfEpoch
-    // 9: nullifier (proof return value)
+    // 3: issuerPubKeyX
+    // 4: issuerPubKeyY
+    // 5: nullifier (proof return value)
     uint256 private constant SIGNAL_OPRF_PK_X = 0;
     uint256 private constant SIGNAL_OPRF_PK_Y = 1;
     uint256 private constant SIGNAL_VALID_UNTIL = 2;
-    uint256 private constant SIGNAL_HOLDER_PUBKEY_X = 3;
-    uint256 private constant SIGNAL_HOLDER_PUBKEY_Y = 4;
-    uint256 private constant SIGNAL_ISSUER_PUBKEY_X = 5;
-    uint256 private constant SIGNAL_ISSUER_PUBKEY_Y = 6;
-    uint256 private constant SIGNAL_OPRF_KEY_ID = 7;
-    uint256 private constant SIGNAL_OPRF_EPOCH = 8;
-    uint256 private constant SIGNAL_NULLIFIER = 9;
-    uint256 private constant PUBLIC_SIGNALS_LENGTH = 10;
-    uint256 private constant VC_OWNERSHIP_OPRF_KEY_ID = 3;
-    uint256 private constant REVOCATION_PUBLIC_SIGNALS_LENGTH = 4;
-    uint256 private constant REVOCATION_BLOCK_WINDOW = 10;
-    uint256 private constant REVOKE_DOMAIN_SEPARATOR = 581564822560125587885439217300392511509116045944773424422209198;
+    uint256 private constant SIGNAL_ISSUER_PUBKEY_X = 3;
+    uint256 private constant SIGNAL_ISSUER_PUBKEY_Y = 4;
+    uint256 private constant SIGNAL_NULLIFIER = 5;
+    uint256 private constant PUBLIC_SIGNALS_LENGTH = 6;
 
     IVcOprfEnrollmentVerifier public immutable enrollmentVerifier;
-    IVcRevocationVerifier public immutable revocationVerifier;
     uint256 public trustedOprfPkX;
     uint256 public trustedOprfPkY;
 
     mapping(uint256 => IdentityRecord) public identitiesByNullifier;
     mapping(uint256 => bool) public trustedIssuers;
     mapping(address => bool) public owners;
+    // Historical append-only list used by purgeInvalidRecords() to scan every enrollment.
     uint256[] public registeredNullifiers;
-    uint256 public purgeCursor;
 
     event IdentityEnrolled(
         uint256 indexed nullifier,
         uint256 indexed issuerPubKeyHash,
         uint256 validUntil,
-        uint256 holderPubKeyX,
-        uint256 holderPubKeyY,
-        uint256 oprfKeyId,
-        uint256 oprfEpoch,
+        address indexed walletAddress,
         uint256 oprfPkX,
         uint256 oprfPkY
     );
+
+    // Events
+
     event IssuerAdded(uint256 indexed issuerPubKeyHash);
     event IssuerRemoved(uint256 indexed issuerPubKeyHash);
     event OwnerAdded(address indexed owner);
     event OwnerRemoved(address indexed owner);
     event TrustedOprfPublicKeyUpdated(uint256 oldPkX, uint256 oldPkY, uint256 newPkX, uint256 newPkY);
-    event IdentityRevoked(uint256 indexed nullifier, uint256 challengeBlockNumber);
+    event IdentityRevoked(uint256 indexed nullifier, address indexed walletAddress);
     event IdentityPurged(uint256 indexed nullifier, bool expired, bool issuerUntrusted);
+
+    // Errors
 
     error NotOwner();
     error IssuerNotTrusted();
@@ -104,23 +90,28 @@ contract IdentityRegistry {
     error InvalidFieldElement();
     error InvalidOprfMetadata();
     error UntrustedOprfPublicKey();
-    error InvalidRevocationProof();
-    error RevocationChallengeExpired();
-    error InvalidChallengeBlock();
-    error HolderKeyMismatch();
+    error InvalidWalletAddress();
+    error InvalidEnrollmentAuthorization();
+    error InvalidRevocationSignature();
+    error RevocationSignatureExpired();
+    error InvalidSignature();
+    error InvalidNullifier();
+    error InvalidIssuerPublicKey();
+
+    // Modifiers
 
     modifier onlyOwner() {
         if (!owners[msg.sender]) revert NotOwner();
         _;
     }
 
-    constructor(address _enrollmentVerifier, address _revocationVerifier, uint256 _oprfPkX, uint256 _oprfPkY) {
+    // Setup
+
+    constructor(address _enrollmentVerifier, uint256 _oprfPkX, uint256 _oprfPkY) {
         require(_enrollmentVerifier.code.length > 0, "Verifier has no runtime code");
-        require(_revocationVerifier.code.length > 0, "Revocation verifier has no runtime code");
         if (_oprfPkX == 0 || _oprfPkY == 0) revert InvalidOprfMetadata();
         if (_oprfPkX >= SNARK_SCALAR_FIELD || _oprfPkY >= SNARK_SCALAR_FIELD) revert InvalidFieldElement();
         enrollmentVerifier = IVcOprfEnrollmentVerifier(_enrollmentVerifier);
-        revocationVerifier = IVcRevocationVerifier(_revocationVerifier);
         trustedOprfPkX = _oprfPkX;
         trustedOprfPkY = _oprfPkY;
         owners[msg.sender] = true;
@@ -128,21 +119,36 @@ contract IdentityRegistry {
         emit TrustedOprfPublicKeyUpdated(0, 0, _oprfPkX, _oprfPkY);
     }
 
-    function enroll(bytes calldata proof, bytes32[] calldata publicSignals) external {
+    // User flows
+
+    function enroll(
+        bytes calldata proof,
+        bytes32[] calldata publicSignals,
+        address walletAddress,
+        bytes calldata enrollmentSignature
+    ) external {
+        if (walletAddress == address(0)) revert InvalidWalletAddress();
         if (publicSignals.length != PUBLIC_SIGNALS_LENGTH) revert InvalidPublicSignalLength();
 
+        // The verifier expects every public signal to be a valid field element.
         for (uint256 i = 0; i < PUBLIC_SIGNALS_LENGTH; i++) {
             if (uint256(publicSignals[i]) >= SNARK_SCALAR_FIELD) revert InvalidFieldElement();
         }
 
-        uint256 oprfKeyId = uint256(publicSignals[SIGNAL_OPRF_KEY_ID]);
-        uint256 oprfEpoch = uint256(publicSignals[SIGNAL_OPRF_EPOCH]);
-        if (oprfKeyId == 0 || oprfEpoch == 0) revert InvalidOprfMetadata();
-        if (oprfKeyId != VC_OWNERSHIP_OPRF_KEY_ID) revert InvalidOprfMetadata();
+        // The proof must be tied to the currently trusted OPRF public key.
         if (
             uint256(publicSignals[SIGNAL_OPRF_PK_X]) != trustedOprfPkX
                 || uint256(publicSignals[SIGNAL_OPRF_PK_Y]) != trustedOprfPkY
         ) revert UntrustedOprfPublicKey();
+
+        uint256 nullifier = uint256(publicSignals[SIGNAL_NULLIFIER]);
+        if (nullifier == 0) revert InvalidNullifier();
+
+        // Verify EIP-712 authorization before expensive proof verification (fail cheaply on bad sigs).
+        bytes32 enrollmentDigest = hashEnrollmentAuthorization(proof, publicSignals, walletAddress);
+        if (_recover(enrollmentDigest, enrollmentSignature) != walletAddress) {
+            revert InvalidEnrollmentAuthorization();
+        }
 
         bool isValid;
         try enrollmentVerifier.verify(proof, publicSignals) returns (bool result) {
@@ -153,6 +159,7 @@ contract IdentityRegistry {
         if (!isValid) revert InvalidProof();
 
         EnrollmentSignals memory s = _parseEnrollmentSignals(publicSignals);
+        if (s.nullifier != nullifier) revert InvalidProof();
 
         if (identitiesByNullifier[s.nullifier].exists) revert IdentityAlreadyExists();
         if (block.timestamp > s.validUntil) revert IdentityExpired();
@@ -164,10 +171,7 @@ contract IdentityRegistry {
             validUntil: s.validUntil,
             issuerPubKeyX: s.issuerPubKeyX,
             issuerPubKeyY: s.issuerPubKeyY,
-            holderPubKeyX: s.holderPubKeyX,
-            holderPubKeyY: s.holderPubKeyY,
-            oprfKeyId: s.oprfKeyId,
-            oprfEpoch: s.oprfEpoch,
+            walletAddress: walletAddress,
             exists: true
         });
 
@@ -177,31 +181,26 @@ contract IdentityRegistry {
             s.nullifier,
             issuerPubKeyHash,
             s.validUntil,
-            s.holderPubKeyX,
-            s.holderPubKeyY,
-            s.oprfKeyId,
-            s.oprfEpoch,
+            walletAddress,
             s.oprfPkX,
             s.oprfPkY
         );
     }
 
-    function _parseEnrollmentSignals(bytes32[] calldata publicSignals)
-        internal
-        pure
-        returns (EnrollmentSignals memory s)
-    {
-        s.oprfPkX = uint256(publicSignals[SIGNAL_OPRF_PK_X]);
-        s.oprfPkY = uint256(publicSignals[SIGNAL_OPRF_PK_Y]);
-        s.validUntil = uint256(publicSignals[SIGNAL_VALID_UNTIL]);
-        s.holderPubKeyX = uint256(publicSignals[SIGNAL_HOLDER_PUBKEY_X]);
-        s.holderPubKeyY = uint256(publicSignals[SIGNAL_HOLDER_PUBKEY_Y]);
-        s.issuerPubKeyX = uint256(publicSignals[SIGNAL_ISSUER_PUBKEY_X]);
-        s.issuerPubKeyY = uint256(publicSignals[SIGNAL_ISSUER_PUBKEY_Y]);
-        s.oprfKeyId = uint256(publicSignals[SIGNAL_OPRF_KEY_ID]);
-        s.oprfEpoch = uint256(publicSignals[SIGNAL_OPRF_EPOCH]);
-        s.nullifier = uint256(publicSignals[SIGNAL_NULLIFIER]);
+    function revoke(uint256 nullifier, uint256 deadline, bytes calldata signature) external {
+        IdentityRecord storage record = identitiesByNullifier[nullifier];
+        if (!record.exists) revert IdentityNotFound();
+        if (block.timestamp > deadline) revert RevocationSignatureExpired();
+        address walletAddress = record.walletAddress;
+        if (_recover(hashRevocationAuthorization(nullifier, deadline), signature) != walletAddress) {
+            revert InvalidRevocationSignature();
+        }
+
+        delete identitiesByNullifier[nullifier];
+        emit IdentityRevoked(nullifier, walletAddress);
     }
+
+    // Read helpers
 
     function getIdentity(uint256 nullifier) external view returns (IdentityRecord memory record) {
         if (!identitiesByNullifier[nullifier].exists) revert IdentityNotFound();
@@ -213,99 +212,88 @@ contract IdentityRegistry {
         return record.exists && block.timestamp <= record.validUntil;
     }
 
-    function revoke(bytes calldata proof, bytes32[] calldata publicSignals, uint256 challengeBlockNumber) external {
-        if (publicSignals.length != REVOCATION_PUBLIC_SIGNALS_LENGTH) revert InvalidPublicSignalLength();
-        for (uint256 i = 0; i < REVOCATION_PUBLIC_SIGNALS_LENGTH; i++) {
-            if (uint256(publicSignals[i]) >= SNARK_SCALAR_FIELD) revert InvalidFieldElement();
-        }
-
-        uint256 currentBlock = block.number;
-        if (challengeBlockNumber >= currentBlock) revert InvalidChallengeBlock();
-        if (currentBlock - challengeBlockNumber > REVOCATION_BLOCK_WINDOW) revert RevocationChallengeExpired();
-
-        uint256 nullifier = uint256(publicSignals[0]);
-        IdentityRecord storage record = identitiesByNullifier[nullifier];
-        if (!record.exists) revert IdentityNotFound();
-
-        uint256 holderPubKeyX = uint256(publicSignals[1]);
-        uint256 holderPubKeyY = uint256(publicSignals[2]);
-        if (holderPubKeyX != record.holderPubKeyX || holderPubKeyY != record.holderPubKeyY) {
-            revert HolderKeyMismatch();
-        }
-
-        bytes32 challengeHashBytes = blockhash(challengeBlockNumber);
-        if (challengeHashBytes == bytes32(0)) revert InvalidChallengeBlock();
-        uint256 challengeHashField = uint256(challengeHashBytes) % SNARK_SCALAR_FIELD;
-        if (uint256(publicSignals[3]) != challengeHashField) revert InvalidChallengeBlock();
-
-        bytes32[] memory verifierSignals = new bytes32[](REVOCATION_PUBLIC_SIGNALS_LENGTH);
-        verifierSignals[0] = publicSignals[0];
-        verifierSignals[1] = publicSignals[1];
-        verifierSignals[2] = publicSignals[2];
-        verifierSignals[3] = bytes32(challengeHashField);
-
-        bool ok;
-        try revocationVerifier.verify(proof, verifierSignals) returns (bool result) {
-            ok = result;
-        } catch {
-            revert InvalidRevocationProof();
-        }
-        if (!ok) revert InvalidRevocationProof();
-
-        delete identitiesByNullifier[nullifier];
-        emit IdentityRevoked(nullifier, challengeBlockNumber);
-    }
-
     function getIdentityCount() external view returns (uint256 count) {
         return registeredNullifiers.length;
     }
 
+    function isIssuerTrusted(uint256 pubKeyX, uint256 pubKeyY) external view returns (bool isTrusted) {
+        uint256 issuerPubKeyHash = uint256(keccak256(abi.encodePacked(pubKeyX, pubKeyY)));
+        return trustedIssuers[issuerPubKeyHash];
+    }
+
+    // Off-chain authorization helpers
+
+    function domainSeparator() public view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256("IdentityRegistry"),
+                keccak256("1"),
+                block.chainid,
+                address(this)
+            )
+        );
+    }
+
+    /// @notice EIP-712 digest for enrollment authorization (matches `signTypedData` / EIP-712 v4).
+    function hashEnrollmentAuthorization(
+        bytes calldata proof,
+        bytes32[] calldata publicSignals,
+        address walletAddress
+    ) public view returns (bytes32) {
+        if (publicSignals.length != PUBLIC_SIGNALS_LENGTH) {
+            revert InvalidPublicSignalLength();
+        }
+        bytes32 structHash = keccak256(
+            abi.encode(
+                ENROLL_TYPEHASH,
+                uint256(publicSignals[SIGNAL_NULLIFIER]),
+                keccak256(abi.encodePacked(publicSignals)),
+                keccak256(proof),
+                walletAddress
+            )
+        );
+        return _hashTypedDataV4(structHash);
+    }
+
+    /// @notice EIP-712 digest for revocation (matches `signTypedData` / EIP-712 v4).
+    function hashRevocationAuthorization(uint256 nullifier, uint256 deadline) public view returns (bytes32) {
+        bytes32 structHash = keccak256(abi.encode(REVOKE_TYPEHASH, nullifier, deadline));
+        return _hashTypedDataV4(structHash);
+    }
+
+    // Permissionless maintenance
+
     /// @notice Permissionless maintenance function to remove invalid identities.
     /// @dev Removes records that are expired or whose issuer is no longer trusted.
-    /// @param maxIterations Maximum number of historical registry entries to scan in this call.
+    ///      Scans the full historical nullifier list from start to end each call.
     /// @return purged Number of identity records removed.
-    /// @return scanned Number of entries scanned.
-    /// @return nextCursor Cursor position for the next purge call.
-    function purgeInvalidRecords(uint256 maxIterations)
-        external
-        returns (uint256 purged, uint256 scanned, uint256 nextCursor)
-    {
+    function purgeInvalidRecords() external returns (uint256 purged) {
         uint256 total = registeredNullifiers.length;
-        if (total == 0 || maxIterations == 0) {
-            return (0, 0, purgeCursor);
-        }
-
-        uint256 cursor = purgeCursor;
-        uint256 iterations = maxIterations;
-        if (iterations > total) iterations = total;
-
-        for (uint256 i = 0; i < iterations; i++) {
-            if (cursor >= total) cursor = 0;
-
-            uint256 nullifier = registeredNullifiers[cursor];
+        for (uint256 i = 0; i < total; i++) {
+            uint256 nullifier = registeredNullifiers[i];
             IdentityRecord storage record = identitiesByNullifier[nullifier];
 
             if (record.exists) {
-                uint256 issuerPubKeyHash = uint256(keccak256(abi.encodePacked(record.issuerPubKeyX, record.issuerPubKeyY)));
+                uint256 issuerPubKeyHash =
+                    uint256(keccak256(abi.encodePacked(record.issuerPubKeyX, record.issuerPubKeyY)));
                 bool expired = block.timestamp > record.validUntil;
                 bool issuerUntrusted = !trustedIssuers[issuerPubKeyHash];
 
+                // delete() clears the live record but leaves the historical nullifier in the scan list.
                 if (expired || issuerUntrusted) {
                     delete identitiesByNullifier[nullifier];
                     emit IdentityPurged(nullifier, expired, issuerUntrusted);
                     purged++;
                 }
             }
-
-            cursor++;
-            scanned++;
         }
-
-        purgeCursor = cursor >= total ? cursor % total : cursor;
-        nextCursor = purgeCursor;
     }
 
+    // Admin
+
     function addTrustedIssuer(uint256 pubKeyX, uint256 pubKeyY) external onlyOwner {
+        if (pubKeyX == 0 || pubKeyY == 0) revert InvalidIssuerPublicKey();
         uint256 issuerPubKeyHash = uint256(keccak256(abi.encodePacked(pubKeyX, pubKeyY)));
         trustedIssuers[issuerPubKeyHash] = true;
         emit IssuerAdded(issuerPubKeyHash);
@@ -315,11 +303,6 @@ contract IdentityRegistry {
         uint256 issuerPubKeyHash = uint256(keccak256(abi.encodePacked(pubKeyX, pubKeyY)));
         trustedIssuers[issuerPubKeyHash] = false;
         emit IssuerRemoved(issuerPubKeyHash);
-    }
-
-    function isIssuerTrusted(uint256 pubKeyX, uint256 pubKeyY) external view returns (bool isTrusted) {
-        uint256 issuerPubKeyHash = uint256(keccak256(abi.encodePacked(pubKeyX, pubKeyY)));
-        return trustedIssuers[issuerPubKeyHash];
     }
 
     function addOwner(address owner) external onlyOwner {
@@ -344,7 +327,43 @@ contract IdentityRegistry {
         emit TrustedOprfPublicKeyUpdated(oldX, oldY, pkX, pkY);
     }
 
-    function revokeDomainSeparator() external pure returns (uint256) {
-        return REVOKE_DOMAIN_SEPARATOR;
+    // Internal helpers
+
+    function _parseEnrollmentSignals(bytes32[] calldata publicSignals)
+        internal
+        pure
+        returns (EnrollmentSignals memory s)
+    {
+        s.oprfPkX = uint256(publicSignals[SIGNAL_OPRF_PK_X]);
+        s.oprfPkY = uint256(publicSignals[SIGNAL_OPRF_PK_Y]);
+        s.validUntil = uint256(publicSignals[SIGNAL_VALID_UNTIL]);
+        s.issuerPubKeyX = uint256(publicSignals[SIGNAL_ISSUER_PUBKEY_X]);
+        s.issuerPubKeyY = uint256(publicSignals[SIGNAL_ISSUER_PUBKEY_Y]);
+        s.nullifier = uint256(publicSignals[SIGNAL_NULLIFIER]);
+    }
+
+    function _hashTypedDataV4(bytes32 structHash) internal view returns (bytes32) {
+        return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), structHash));
+    }
+
+    function _recover(bytes32 digest, bytes calldata signature) internal pure returns (address signer) {
+        if (signature.length != 65) revert InvalidSignature();
+
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        assembly {
+            r := calldataload(signature.offset)
+            s := calldataload(add(signature.offset, 0x20))
+            v := byte(0, calldataload(add(signature.offset, 0x40)))
+        }
+
+        if (uint256(s) > SECP256K1_N_HALF) revert InvalidSignature();
+        if (v < 27) v += 27;
+        if (v != 27 && v != 28) revert InvalidSignature();
+
+        // ecrecover returns address(0) on malformed inputs, so treat that as invalid too.
+        signer = ecrecover(digest, v, r, s);
+        if (signer == address(0)) revert InvalidSignature();
     }
 }

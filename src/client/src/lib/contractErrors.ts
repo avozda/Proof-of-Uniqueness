@@ -11,11 +11,11 @@ const REVERT_SELECTOR_MESSAGES: Record<string, string> = {
     "Only the contract owner can perform this action. Connect the deployer wallet.",
   "0xd3c12856": "No identity record exists for this hash ID.",
   "0x0ce8eac5": "This identity credential has expired on-chain.",
-  "0x7feb78f8": "Revocation proof was rejected by the on-chain verifier.",
-  "0x04f7ac42": "Revocation challenge block/hash is invalid for current chain state.",
-  "0xb1bbb042":
-    "Revocation challenge block is too old. Generate a fresh revocation proof.",
-  "0x6d518c60": "Revocation proof holder key does not match the enrolled identity.",
+  "0xa5f90a11": "Connect a wallet before enrolling this identity.",
+  "0xdef8823b": "Wallet signature did not authorize this enrollment.",
+  "0xa9615b40": "Wallet signature did not authorize this revocation.",
+  "0x41888f68": "Revocation signature has expired. Sign a new revocation request.",
+  "0x8baa579f": "Wallet signature is malformed or invalid.",
 };
 
 const ERROR_NAME_MESSAGES: Record<string, string> = {
@@ -29,16 +29,16 @@ const ERROR_NAME_MESSAGES: Record<string, string> = {
     "Public signals length is invalid for this verifier.",
   InvalidFieldElement:
     "One or more public signals are outside the field modulus.",
-  InvalidOprfMetadata: "Invalid OPRF metadata (key id/epoch).",
+  InvalidOprfMetadata: "Invalid OPRF public key configuration (zero coordinates).",
   UntrustedOprfPublicKey:
     "Proof uses an OPRF public key that is not trusted by this contract.",
-  InvalidRevocationProof: "Revocation proof was rejected by the on-chain verifier.",
-  RevocationChallengeExpired:
-    "Revocation challenge block is too old. Generate a fresh revocation proof.",
-  InvalidChallengeBlock:
-    "Revocation challenge block/hash is invalid for current chain state.",
-  HolderKeyMismatch:
-    "Revocation proof holder key does not match the enrolled identity.",
+  InvalidWalletAddress: REVERT_SELECTOR_MESSAGES["0xa5f90a11"],
+  InvalidEnrollmentAuthorization: REVERT_SELECTOR_MESSAGES["0xdef8823b"],
+  InvalidRevocationSignature: REVERT_SELECTOR_MESSAGES["0xa9615b40"],
+  RevocationSignatureExpired: REVERT_SELECTOR_MESSAGES["0x41888f68"],
+  InvalidSignature: REVERT_SELECTOR_MESSAGES["0x8baa579f"],
+  InvalidNullifier: "Enrollment nullifier cannot be zero.",
+  InvalidIssuerPublicKey: "Issuer public key coordinates cannot be zero.",
 };
 
 function isHexData(value: unknown): value is `0x${string}` {
@@ -167,26 +167,20 @@ export function formatIdentityRegistryTxError(err: Error): string {
   if (msg.includes("UntrustedOprfPublicKey")) {
     return ERROR_NAME_MESSAGES.UntrustedOprfPublicKey;
   }
-  if (msg.includes("InvalidRevocationProof")) {
-    return ERROR_NAME_MESSAGES.InvalidRevocationProof;
+  if (msg.includes("InvalidWalletAddress")) {
+    return ERROR_NAME_MESSAGES.InvalidWalletAddress;
   }
-  if (msg.includes("RevocationChallengeExpired")) {
-    return ERROR_NAME_MESSAGES.RevocationChallengeExpired;
+  if (msg.includes("InvalidEnrollmentAuthorization")) {
+    return ERROR_NAME_MESSAGES.InvalidEnrollmentAuthorization;
   }
-  if (msg.includes("InvalidChallengeBlock")) {
-    return ERROR_NAME_MESSAGES.InvalidChallengeBlock;
+  if (msg.includes("InvalidRevocationSignature")) {
+    return ERROR_NAME_MESSAGES.InvalidRevocationSignature;
   }
-  if (msg.includes("HolderKeyMismatch")) {
-    return ERROR_NAME_MESSAGES.HolderKeyMismatch;
+  if (msg.includes("RevocationSignatureExpired")) {
+    return ERROR_NAME_MESSAGES.RevocationSignatureExpired;
   }
-  if (msg.includes("InvalidPublicSignalLength")) {
-    return ERROR_NAME_MESSAGES.InvalidPublicSignalLength;
-  }
-  if (msg.includes("InvalidFieldElement")) {
-    return ERROR_NAME_MESSAGES.InvalidFieldElement;
-  }
-  if (msg.includes("InvalidOprfMetadata")) {
-    return ERROR_NAME_MESSAGES.InvalidOprfMetadata;
+  if (msg.includes("InvalidSignature")) {
+    return ERROR_NAME_MESSAGES.InvalidSignature;
   }
 
   if (

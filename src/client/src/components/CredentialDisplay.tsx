@@ -10,9 +10,7 @@ export function CredentialDisplay({ credential }: CredentialDisplayProps) {
 
   const handleCopyVC = async () => {
     try {
-      await navigator.clipboard.writeText(
-        JSON.stringify(credential, null, 2)
-      );
+      await navigator.clipboard.writeText(JSON.stringify(credential, null, 2));
       setCopiedVC(true);
       setTimeout(() => setCopiedVC(false), 2000);
     } catch (err) {
@@ -25,22 +23,13 @@ export function CredentialDisplay({ credential }: CredentialDisplayProps) {
       <div className="credential-header">
         <div className="credential-header-left">
           <span className="vc-badge">VC 2.0</span>
-          <span className="vc-type">BiometricIdentityCredential</span>
         </div>
         <button
           className={`copy-button ${copiedVC ? "copied" : ""}`}
           onClick={handleCopyVC}
           type="button"
         >
-          {copiedVC ? (
-            <>
-              Copied!
-            </>
-          ) : (
-            <>
-              Copy
-            </>
-          )}
+          {copiedVC ? <>Copied!</> : <>Copy</>}
         </button>
       </div>
       <pre className="credential-json">

@@ -17,7 +17,6 @@ export function IdentityForm({
     formData.name &&
     formData.dateOfBirth &&
     formData.placeOfBirth &&
-    formData.permanentAddress &&
     formData.nationality &&
     formData.sex;
 
@@ -76,19 +75,6 @@ export function IdentityForm({
             value={formData.placeOfBirth}
             onChange={onInputChange}
             placeholder="Prague"
-            required
-          />
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="permanentAddress">Permanent Address</label>
-          <input
-            type="text"
-            id="permanentAddress"
-            name="permanentAddress"
-            value={formData.permanentAddress}
-            onChange={onInputChange}
-            placeholder="Main St 123, Prague"
             required
           />
         </div>

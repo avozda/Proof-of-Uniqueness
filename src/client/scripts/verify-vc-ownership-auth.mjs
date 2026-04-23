@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Noir } from "@noir-lang/noir_js";
 import { BarretenbergBackend } from "@noir-lang/backend_barretenberg";
-import { buildEddsa, buildPoseidon } from "circomlibjs";
+import { buildPoseidon } from "circomlibjs";
 
 function parseKeyValueArgs(argv) {
   const out = new Map();
@@ -64,7 +64,7 @@ async function verifyWithMode(circuit, proofBytes, publicBytes, mode) {
 async function main() {
   const [mode, ...rest] = process.argv.slice(2);
   if (!mode) {
-    throw new Error("Expected subcommand: verify-proof or verify-holder-sig");
+    throw new Error("Expected subcommand: verify-proof or string-to-field");
   }
 
   if (mode === "verify-proof") {
@@ -99,21 +99,13 @@ async function main() {
     throw new Error("verification failed for both le and be public input decoding");
   }
 
-  if (mode === "verify-holder-sig") {
+  if (mode === "string-to-field") {
     const args = parseKeyValueArgs(rest);
-    const requestId = args.get("request-id");
-    const blindedX = args.get("blinded-x");
-    const blindedY = args.get("blinded-y");
-    const holderPubX = args.get("holder-pub-x");
-    const holderPubY = args.get("holder-pub-y");
-    const sigR8x = args.get("sig-r8x");
-    const sigR8y = args.get("sig-r8y");
-    const sigS = args.get("sig-s");
-    if (!requestId || !blindedX || !blindedY || !holderPubX || !holderPubY || !sigR8x || !sigR8y || !sigS) {
-      throw new Error("Missing required holder signature arguments");
+    const value = args.get("value");
+    if (!value) {
+      throw new Error("Missing required arg --value");
     }
 
-    const eddsa = await buildEddsa();
     const poseidon = await buildPoseidon();
 
     const stringToField = (str) => {
@@ -131,37 +123,7 @@ async function main() {
       return poseidon.F.toObject(poseidon(chunks));
     };
 
-    const domain = stringToField("holder-bjj-oprf-auth:v1");
-    const requestField = stringToField(requestId);
-    const msg = poseidon.F.toObject(
-      poseidon([domain, requestField, BigInt(blindedX), BigInt(blindedY)]),
-    );
-
-    const inFieldRange = (v) => {
-      const x = BigInt(v);
-      const FIELD_MODULUS = BigInt(
-        "21888242871839275222246405745257275088548364400416034343698204186575808495617",
-      );
-      return x > 0n && x < FIELD_MODULUS;
-    };
-
-    if (!inFieldRange(holderPubX) || !inFieldRange(holderPubY)) {
-      throw new Error("holder public key coordinates are out of field range");
-    }
-
-    const ok = eddsa.verifyPoseidon(
-      eddsa.F.e(msg),
-      {
-        R8: [eddsa.F.e(BigInt(sigR8x)), eddsa.F.e(BigInt(sigR8y))],
-        S: BigInt(sigS),
-      },
-      [eddsa.F.e(BigInt(holderPubX)), eddsa.F.e(BigInt(holderPubY))],
-    );
-
-    if (!ok) {
-      throw new Error("holder request signature invalid");
-    }
-    process.stdout.write("ok holder-signature\n");
+    process.stdout.write(`${stringToField(value).toString()}\n`);
     return;
   }
 

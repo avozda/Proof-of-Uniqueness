@@ -1,56 +1,96 @@
 # Proof of Uniqueness
 
-Privacy-preserving identity enrollment and revocation on Ethereum using Noir + Barretenberg proofs and holder/issuer BabyJubJub EdDSA signatures.
+Privacy-preserving identity verification based on zkSNARKs using:
 
-No legacy Circom/Groth16 path is supported.
+- Noir + Barretenberg proofs
+- BabyJubJub EdDSA holder and issuer keys
+- threshold OPRF nodes for enrollment
+- EIP-712 wallet signatures for on-chain enrollment and revocation
 
-## End-to-End Flow
-
-1. Client generates holder keypair.
-2. Client creates VC and issuer signs VC Merkle root.
-3. Client generates enrollment proof and submits to `IdentityRegistry.enroll(...)`.
-4. Contract verifies proof + trusted issuer + trusted OPRF key, then stores identity record keyed by nullifier.
-5. For revocation, client generates revocation proof (fresh challenge block bound) and submits `IdentityRegistry.revoke(...)`.
-
-## Repository Structure
+## Repo layout
 
 ```text
 src/
-├── client/
-│   ├── public/circuits/
-│   └── src/
-├── oprf-testnet/
-│   └── noir/
-└── smart-contracts/
+├── circuits/          Noir circuits used by the client and OPRF auth module
+├── client/            React app
+├── oprf-testnet/      Local OPRF node stack and auth module
+└── smart-contracts/   Foundry project with IdentityRegistry
 ```
 
-## Local Run
+## Prerequisites
 
-### 1) Start local chain
+You need the usual local tooling for this repo:
+
+- `git`
+- `cargo`
+- `docker`
+- `foundry` (`forge`, `anvil`)
+- `node` + `npm`
+- `nargo` / `bb` only if you want to rebuild circuit artifacts
+
+## Setup
+
+### 1. Init submodules
+
+This repo depends on nested code inside submodules, including vendored Noir dependencies used by the circuits.
+
+```bash
+git submodule update --init --recursive
+```
+
+### 2. Start the local OPRF stack
+
+The client expects three local OPRF nodes at:
+
+- `http://127.0.0.1:10000`
+- `http://127.0.0.1:10001`
+- `http://127.0.0.1:10002`
+
+Bring them up with:
+
+```bash
+cd src/oprf-testnet
+chmod +x local-setup.sh
+./local-setup.sh setup
+```
+
+What this script does:
+
+- builds the OPRF workspace
+- starts Docker services for the OPRF databases and keygen nodes
+- starts three local OPRF nodes
+- initializes OPRF keys so `/oprf_pub/*` is available on the nodes
+
+Keep this terminal running.
+
+### 3. Anvil
 
 ```bash
 anvil
 ```
 
-### 2) Deploy contracts
+### 4. Deploy the smart contract
+
+Recommended local deployment uses the live OPRF public key from the running node:
 
 ```bash
 cd src/smart-contracts
-forge build
-forge script script/IdentityRegistry.s.sol --rpc-url http://127.0.0.1:8545 --broadcast
+PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+./script/deploy-identity-registry-dynamic-oprf.sh
 ```
 
-### 3) Run client
+After deployment, update the client contract address in:
+
+- [src/client/src/lib/wagmi.ts](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/lib/wagmi.ts:1)
+
+If you redeploy `IdentityRegistry`, the client must point to the new address.
+
+### 5. Run the client
+
+In another terminal:
 
 ```bash
 cd src/client
 npm install
 npm run dev
 ```
-
-Open `http://localhost:5173`.
-
-## Notes
-
-- Enrollment/revocation artifacts consumed by the client are in `src/client/public/circuits`.
-- If circuits/public signals change, regenerate Noir artifacts, verifier contracts, and redeploy `IdentityRegistry`.
