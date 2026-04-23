@@ -30,6 +30,10 @@ export function signMessageWithHolderKey(
   return signMessage(privateKey, message);
 }
 
+export function requestIdToField(requestId: string): bigint {
+  return stringToField(requestId);
+}
+
 export function buildHolderOprfAuthMessage(
   requestId: string,
   blindedX: bigint,
@@ -37,7 +41,7 @@ export function buildHolderOprfAuthMessage(
 ): bigint {
   return poseidonHash([
     stringToField(HOLDER_OPRF_AUTH_DOMAIN),
-    stringToField(requestId),
+    requestIdToField(requestId),
     blindedX,
     blindedY,
   ]);

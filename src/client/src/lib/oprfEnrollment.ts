@@ -23,6 +23,7 @@ import type { VerifiableCredential } from "./vc";
 import type { HolderKeyPair } from "./holderKey";
 import {
   buildHolderOprfAuthMessage,
+  requestIdToField,
   signMessageWithHolderKey,
 } from "./holderKey";
 import {
@@ -31,7 +32,6 @@ import {
   dateToField,
   decodeProofValue,
   extractPublicKeyFromVerificationMethod,
-  getDomainSeparator,
   poseidonHash,
   sexToField,
   stringToField,
@@ -195,7 +195,6 @@ function buildFieldValuesOrdered(vc: VerifiableCredential): bigint[] {
     stringToField(vc.issuer.id),
     stringToField(s.name),
     stringToField(s.nationality),
-    BigInt(s.permanentAddressHash.value),
     stringToField(s.placeOfBirth),
     sexToField(s.sex),
     dateToField(vc.validFrom),
@@ -249,15 +248,13 @@ function computeHashIdFromVc(vc: VerifiableCredential): bigint {
   const fieldValues = buildFieldValuesOrdered(vc);
   return normalizeField(
     poseidonHash([
-      fieldValues[12],
       fieldValues[2],
       fieldValues[5],
       fieldValues[3],
-      fieldValues[8],
-      fieldValues[9],
-      fieldValues[6],
       fieldValues[7],
-      fieldValues[10],
+      fieldValues[8],
+      fieldValues[6],
+      fieldValues[9],
     ]),
   );
 }
@@ -265,37 +262,27 @@ function computeHashIdFromVc(vc: VerifiableCredential): bigint {
 function buildNoirInputs(
   vc: VerifiableCredential,
   issuerPublicKey: { x: bigint; y: bigint },
-  holderKeyPair: HolderKeyPair,
   transcript: OprfTranscriptInput,
 ) {
   const fieldValues = buildFieldValuesOrdered(vc);
   const merkleLeaves = buildMerkleLeaves(fieldValues);
   const issuerSig = decodeIssuerSig(vc);
-  const hashId = computeHashIdFromVc(vc);
-  const holderBindSig = signMessageWithHolderKey(holderKeyPair.privateKey, hashId);
-
   const holderX = BigInt(vc.credentialSubject.holderPublicKey.x);
   const holderY = BigInt(vc.credentialSubject.holderPublicKey.y);
-  if (holderX !== holderKeyPair.publicKey.x || holderY !== holderKeyPair.publicKey.y) {
-    throw new Error("Holder key in VC does not match active holder keypair");
-  }
   if (issuerSig.signerPubKey[0] !== issuerPublicKey.x || issuerSig.signerPubKey[1] !== issuerPublicKey.y) {
     throw new Error("Issuer key in VC proof does not match active issuer key");
   }
 
-  if (fieldValues[11] <= 0n) {
+  if (fieldValues[10] <= 0n) {
     throw new Error("validUntil field is not a positive unix timestamp");
   }
 
   const debugInputs = {
-    domain_separator: getDomainSeparator().toString(),
     merkle_leaves: merkleLeaves.map((x) => x.toString()),
     field_values: fieldValues.map((x) => x.toString()),
     signer_pub_key: issuerSig.signerPubKey.map((x) => x.toString()),
     signature_r8: issuerSig.signatureR8.map((x) => x.toString()),
     signature_s: issuerSig.signatureS.toString(),
-    holder_signature_r8: holderBindSig.R8.map((x) => normalizeField(x).toString()),
-    holder_signature_s: normalizeField(holderBindSig.S).toString(),
     beta: transcript.beta.toString(),
     oprf_pk: {
       x: transcript.oprfPkX.toString(),
@@ -311,7 +298,7 @@ function buildNoirInputs(
       x: transcript.oprfResponseX.toString(),
       y: transcript.oprfResponseY.toString(),
     },
-    valid_until: fieldValues[11].toString(),
+    valid_until: fieldValues[10].toString(),
     holder_pub_key_x: holderX.toString(),
     holder_pub_key_y: holderY.toString(),
     issuer_pub_key_x: issuerPublicKey.x.toString(),
@@ -503,13 +490,22 @@ function buildVcBlindedQueryAuthNoirInputs(
   vc: VerifiableCredential,
   issuerPublicKey: { x: bigint; y: bigint },
   holderKeyPair: HolderKeyPair,
+  requestId: string,
   beta: bigint,
+  blindedRequest: { x: bigint; y: bigint },
 ) {
   const fieldValues = buildFieldValuesOrdered(vc);
   const merkleLeaves = buildMerkleLeaves(fieldValues);
   const issuerSig = decodeIssuerSig(vc);
-  const hashId = computeHashIdFromVc(vc);
-  const holderBindSig = signMessageWithHolderKey(holderKeyPair.privateKey, hashId);
+  const holderAuthMessage = buildHolderOprfAuthMessage(
+    requestId,
+    blindedRequest.x,
+    blindedRequest.y,
+  );
+  const holderRequestSig = signMessageWithHolderKey(
+    holderKeyPair.privateKey,
+    holderAuthMessage,
+  );
 
   const holderX = BigInt(vc.credentialSubject.holderPublicKey.x);
   const holderY = BigInt(vc.credentialSubject.holderPublicKey.y);
@@ -521,14 +517,14 @@ function buildVcBlindedQueryAuthNoirInputs(
   }
 
   return {
-    domain_separator: getDomainSeparator().toString(),
+    request_id_field: requestIdToField(requestId).toString(),
     merkle_leaves: merkleLeaves.map((x) => x.toString()),
     field_values: fieldValues.map((x) => x.toString()),
     signer_pub_key: issuerSig.signerPubKey.map((x) => x.toString()),
     signature_r8: issuerSig.signatureR8.map((x) => x.toString()),
     signature_s: issuerSig.signatureS.toString(),
-    holder_signature_r8: holderBindSig.R8.map((x) => normalizeField(x).toString()),
-    holder_signature_s: normalizeField(holderBindSig.S).toString(),
+    holder_signature_r8: holderRequestSig.R8.map((x) => normalizeField(x).toString()),
+    holder_signature_s: normalizeField(holderRequestSig.S).toString(),
     beta: beta.toString(),
   };
 }
@@ -553,29 +549,19 @@ async function fetchLiveOprfTranscript(
     vc,
     issuerPublicKey,
     holderKeyPair,
+    requestId,
     beta,
+    blindedRequest,
   );
 
   const authPayload = await (async () => {
     onProgress?.("Generating blinded-query auth proof for node authentication...");
     const vcProofData = await generateWithNoir(vcCircuit, vcInputs);
     const publicInputsBytes = publicInputsToBytes(vcProofData.publicInputs, "le");
-    const holderAuthMessage = buildHolderOprfAuthMessage(
-      requestId,
-      blindedRequest.x,
-      blindedRequest.y,
-    );
-    const holderSig = signMessageWithHolderKey(
-      holderKeyPair.privateKey,
-      holderAuthMessage,
-    );
     return {
       api_key: network.apiKey,
       public_inputs: Array.from(publicInputsBytes),
       proof: Array.from(vcProofData.proof),
-      holder_sig_r8x: holderSig.R8[0].toString(),
-      holder_sig_r8y: holderSig.R8[1].toString(),
-      holder_sig_s: holderSig.S.toString(),
     };
   })();
 
@@ -719,7 +705,6 @@ export async function buildVcOprfEnrollmentProofPackage(
     const noirInputs = buildNoirInputs(
       credential,
       issuerPublicKey,
-      holderKeyPair,
       transcript,
     );
 

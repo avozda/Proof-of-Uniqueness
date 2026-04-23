@@ -3,10 +3,10 @@ use ec::consts::te::baby_jubjub;
 use ec::tecurve::affine::Point as TEPoint;
 use oprf::oprf_output::verified_oprf;
 use poseidon::poseidon::PoseidonHasher;
-use std::default::Default;
-use std::hash::Hasher;
 
+// Field-encoded OPRF domain separator used when deriving the final unblinded OPRF output.
 global OPRF_DS_N: Field = 24546418369108709687614662004;
+// Field-encoded OPRF domain separator used by the DLEQ proof that links pk and response.
 global OPRF_DS_DLOG: Field = 1523098184080632582082867317389990410064981862;
 
 fn hash2(left: Field, right: Field) -> Field {
@@ -80,31 +80,28 @@ fn eddsa_verify_poseidon(
 }
 
 fn compute_hash_id(
-    field_values: [Field; 13],
+    field_values: [Field; 12],
 ) -> Field {
+    // This is the stable private identifier derived from the VC payload.
+    // It is the secret input that gets fed into the OPRF protocol.
     hash_n([
-        field_values[12],
-        field_values[2],
-        field_values[5],
-        field_values[3],
-        field_values[8],
-        field_values[9],
-        field_values[6],
-        field_values[7],
-        field_values[10],
+        field_values[2], // credentialSubject.id
+        field_values[5], // name
+        field_values[3], // dateOfBirth
+        field_values[7], // placeOfBirth
+        field_values[8], // sex
+        field_values[6], // nationality
+        field_values[9], // validFrom
     ])
 }
 
 fn main(
     // VC proof inputs
-    domain_separator: Field,
     merkle_leaves: [Field; 16],
-    field_values: [Field; 13],
+    field_values: [Field; 12],
     signer_pub_key: [Field; 2],
     signature_r8: [Field; 2],
     signature_s: Field,
-    holder_signature_r8: [Field; 2],
-    holder_signature_s: Field,
     // OPRF transcript inputs
     beta: Field,
     oprf_pk: pub BabyJubJubPoint,
@@ -121,29 +118,33 @@ fn main(
     oprf_key_id: pub Field,
     oprf_epoch: pub Field,
 ) -> pub Field {
+    // These labels must stay in the same order as the VC field encoder outside the circuit.
+    // Each checked Merkle leaf is Poseidon(label, value).
     let field_labels = [
-        2118198470571567473536145588563504,
-        2118198470571567473536145588563505,
-        2217739077219273223255122644505107646662330724,
-        6582114,
-        115944579229042,
-        1851878757,
-        133442057126172576218444921,
-        641669309618204160221840285997001192639266124648,
-        34793344991585695257288930408,
-        7562616,
-        2183735902496290402157,
-        559036391039114700679532,
-        1986218340,
+        2118198470571567473536145588563504, // holderPublicKey.x
+        2118198470571567473536145588563505, // holderPublicKey.y
+        2217739077219273223255122644505107646662330724, // credentialSubject.id
+        6582114, // dateOfBirth
+        115944579229042, // issuer.id
+        1851878757, // name
+        133442057126172576218444921, // nationality
+        34793344991585695257288930408, // placeOfBirth
+        7562616, // sex
+        2183735902496290402157, // validFrom
+        559036391039114700679532, // validUntil
+        1986218340, // vc.id
     ];
 
-    for i in 0..13 {
+    // The first 12 leaves carry the labeled VC fields.
+    // The tree is 16 leaves wide, so the remaining leaves are padding slots.
+    for i in 0..12 {
         let computed_leaf = hash2(field_labels[i], field_values[i]);
         assert(computed_leaf == merkle_leaves[i]);
     }
 
     let root = merkle_root_16(merkle_leaves);
-    let signed_message = hash2(domain_separator, root);
+    // In this circuit variant, the issuer signature is over the Merkle root hash only.
+    let signed_message = hash_n([root]);
     let issuer_valid = eddsa_verify_poseidon(
         signer_pub_key[0],
         signer_pub_key[1],
@@ -157,17 +158,10 @@ fn main(
     let hash_id = compute_hash_id(
         field_values,
     );
-    let holder_valid = eddsa_verify_poseidon(
-        field_values[0],
-        field_values[1],
-        holder_signature_s,
-        holder_signature_r8[0],
-        holder_signature_r8[1],
-        hash_id,
-    );
-    assert(holder_valid);
 
-    assert(valid_until == field_values[11]);
+    // These public values are re-exposed so the on-chain registry can bind the proof
+    // to expiry, issuer identity, holder key, and the selected trusted OPRF key metadata.
+    assert(valid_until == field_values[10]);
     assert(holder_pub_key_x == field_values[0]);
     assert(holder_pub_key_y == field_values[1]);
     assert(issuer_pub_key_x == signer_pub_key[0]);
@@ -175,6 +169,7 @@ fn main(
     assert(oprf_key_id != 0);
     assert(oprf_epoch != 0);
 
+    // Verifies the OPRF server response plus its DLEQ proof, and returns the final OPRF output.
     verified_oprf(
         beta,
         oprf_pk,

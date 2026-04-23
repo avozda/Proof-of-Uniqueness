@@ -10,7 +10,6 @@ import { Noir } from "@noir-lang/noir_js";
 import { BarretenbergBackend } from "@noir-lang/backend_barretenberg";
 import {
   BABYJUBJUB_SUBGROUP_GENERATOR_AFFINE,
-  Fr,
   babyjubjub,
   blindQuery,
   dlogEqualityProof,
@@ -20,7 +19,6 @@ import {
   unblindResponse,
 } from "@taceo/oprf-core";
 
-const SIGNATURE_DOMAIN = "eddsa-bjj-poseidon-2024:v1";
 const FIELD_MODULUS =
   21888242871839275222246405745257275088548364400416034343698204186575808495617n;
 
@@ -32,7 +30,6 @@ const FIELD_LABELS = [
   115944579229042n,
   1851878757n,
   133442057126172576218444921n,
-  641669309618204160221840285997001192639266124648n,
   34793344991585695257288930408n,
   7562616n,
   2183735902496290402157n,
@@ -49,12 +46,6 @@ function bytesToField(bytes) {
   let v = 0n;
   for (const b of bytes) v = (v << 8n) | BigInt(b);
   return v;
-}
-
-function stringToFieldSimple(value) {
-  const bytes = new TextEncoder().encode(value);
-  if (bytes.length > 31) throw new Error(`string too long: ${value}`);
-  return bytesToField(bytes);
 }
 
 function stringToField(value, poseidon) {
@@ -144,7 +135,6 @@ function buildVcContext(eddsa, poseidon) {
     stringToField("did:babyjubjub:test-issuer", poseidon),
     stringToField("Jan Novak", poseidon),
     stringToField("Czech", poseidon),
-    hashN([stringToField("Mala Strana 1, Prague", poseidon)], poseidon),
     stringToField("Prague", poseidon),
     0n,
     dateToField(validFromIso),
@@ -153,41 +143,34 @@ function buildVcContext(eddsa, poseidon) {
   ];
 
   const leaves = new Array(16).fill(0n);
-  for (let i = 0; i < 13; i += 1) {
+  for (let i = 0; i < 12; i += 1) {
     leaves[i] = hash2(FIELD_LABELS[i], fieldValues[i], poseidon);
   }
 
   const root = merkleRoot16(leaves, poseidon);
-  const domainSeparator = stringToFieldSimple(SIGNATURE_DOMAIN);
-  const signedMessage = hash2(domainSeparator, root, poseidon);
+  const signedMessage = hashN([root], poseidon);
 
   const issuerSig = signPoseidon(issuerPrivateKey, signedMessage, eddsa);
 
   const hashId = hashN(
     [
-      fieldValues[12],
       fieldValues[2],
       fieldValues[5],
       fieldValues[3],
-      fieldValues[8],
-      fieldValues[9],
-      fieldValues[6],
       fieldValues[7],
-      fieldValues[10],
+      fieldValues[8],
+      fieldValues[6],
+      fieldValues[9],
     ],
     poseidon,
   );
 
-  const holderSig = signPoseidon(holderPrivateKey, hashId, eddsa);
-
   return {
-    domainSeparator,
     fieldValues,
     leaves,
     issuerPubKey,
     holderPubKey,
     issuerSig,
-    holderSig,
     hashId,
   };
 }
@@ -229,14 +212,11 @@ function buildEnrollmentInputs(ctx, transcript) {
   };
 
   return {
-    domain_separator: ctx.domainSeparator.toString(),
     merkle_leaves: ctx.leaves.map((x) => x.toString()),
     field_values: ctx.fieldValues.map((x) => x.toString()),
     signer_pub_key: ctx.issuerPubKey.map((x) => x.toString()),
     signature_r8: ctx.issuerSig.R8.map((x) => x.toString()),
     signature_s: ctx.issuerSig.S.toString(),
-    holder_signature_r8: ctx.holderSig.R8.map((x) => norm(x)),
-    holder_signature_s: norm(ctx.holderSig.S),
     beta: norm(transcript.beta),
     oprf_pk: { x: norm(transcript.oprfPk.x), y: norm(transcript.oprfPk.y) },
     dlog_e: norm(transcript.dlog.e),
@@ -249,7 +229,7 @@ function buildEnrollmentInputs(ctx, transcript) {
       x: norm(transcript.unblinded.x),
       y: norm(transcript.unblinded.y),
     },
-    valid_until: ctx.fieldValues[11].toString(),
+    valid_until: ctx.fieldValues[10].toString(),
     holder_pub_key_x: ctx.fieldValues[0].toString(),
     holder_pub_key_y: ctx.fieldValues[1].toString(),
     issuer_pub_key_x: ctx.issuerPubKey[0].toString(),

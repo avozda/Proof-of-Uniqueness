@@ -226,10 +226,6 @@ export function poseidonHash(inputs: bigint[]): bigint {
   return poseidonInstance.F.toObject(hash);
 }
 
-// Domain separator for VC signatures (prevents cross-protocol attacks)
-// ≤31 UTF-8 bytes: stringToFieldSimple packs into one field element for Poseidon(domain, root).
-export const SIGNATURE_DOMAIN = "eddsa-bjj-poseidon-2024:v1";
-
 // Field labels for Merkle tree (alphabetically sorted for determinism)
 export const VC_FIELD_LABELS = [
   "holderPubKey.0",
@@ -239,7 +235,6 @@ export const VC_FIELD_LABELS = [
   "issuer",
   "name",
   "nationality",
-  "permanentAddressHash",
   "placeOfBirth",
   "sex",
   "validFrom",
@@ -354,11 +349,6 @@ export function verifyMerklePath(
   return current === root;
 }
 
-/** Compute domain separator field element */
-export function getDomainSeparator(): bigint {
-  return stringToFieldSimple(SIGNATURE_DOMAIN);
-}
-
 /** Convert string to field element (31-byte chunks, Poseidon-hashed if multiple) */
 export function stringToField(str: string): bigint {
   const poseidonInstance = getPoseidon();
@@ -415,7 +405,6 @@ export interface VCFields {
   placeOfBirth: bigint;
   sex: bigint;
   nationality: bigint;
-  permanentAddressHash: bigint;
   validFrom: bigint;
   issuer: bigint;
   validUntil: bigint;
@@ -432,7 +421,6 @@ export function buildFieldMap(vcFields: VCFields): Map<VCFieldLabel, bigint> {
   fieldMap.set("issuer", vcFields.issuer);
   fieldMap.set("name", vcFields.name);
   fieldMap.set("nationality", vcFields.nationality);
-  fieldMap.set("permanentAddressHash", vcFields.permanentAddressHash);
   fieldMap.set("placeOfBirth", vcFields.placeOfBirth);
   fieldMap.set("sex", vcFields.sex);
   fieldMap.set("validFrom", vcFields.validFrom);
@@ -464,9 +452,8 @@ export function createVCSignature(
   const leaves = computeMerkleLeaves(fieldValues);
   const merkleTree = buildMerkleTree(leaves);
 
-  // Message = Poseidon(domainSeparator, merkleRoot)
-  const domainSeparator = getDomainSeparator();
-  const message = poseidonHash([domainSeparator, merkleTree.root]);
+  // Message = Poseidon(merkleRoot)
+  const message = poseidonHash([merkleTree.root]);
 
   return {
     message,

@@ -3,8 +3,9 @@ use ec::consts::te::baby_jubjub;
 use ec::tecurve::affine::Point as TEPoint;
 use oprf::blinded_query::blinded_query;
 use poseidon::poseidon::PoseidonHasher;
-use std::default::Default;
-use std::hash::Hasher;
+
+// Field-encoded "holder-bjj-oprf-auth:v1" domain separator for the holder's OPRF auth signature.
+global HOLDER_OPRF_AUTH_DOMAIN: Field = 10002909461492902845723255642703998760851194670009185841;
 
 fn hash2(left: Field, right: Field) -> Field {
     let mut hasher = PoseidonHasher::default();
@@ -77,55 +78,59 @@ fn eddsa_verify_poseidon(
 }
 
 fn compute_hash_id(
-    field_values: [Field; 13],
+    field_values: [Field; 12],
 ) -> Field {
+    // This is the stable private identifier derived from the VC payload.
+    // It is what the holder signs, and it is also the input that gets blinded for the OPRF query.
     hash_n([
-        field_values[12],
-        field_values[2],
-        field_values[5],
-        field_values[3],
-        field_values[8],
-        field_values[9],
-        field_values[6],
-        field_values[7],
-        field_values[10],
+        field_values[2], // credentialSubject.id
+        field_values[5], // name
+        field_values[3], // dateOfBirth
+        field_values[7], // placeOfBirth
+        field_values[8], // sex
+        field_values[6], // nationality
+        field_values[9], // validFrom
     ])
 }
 
 fn main(
-    domain_separator: Field,
+    request_id_field: pub Field,
     merkle_leaves: [Field; 16],
-    field_values: [Field; 13],
+    field_values: [Field; 12],
     signer_pub_key: [Field; 2],
     signature_r8: [Field; 2],
     signature_s: Field,
     holder_signature_r8: [Field; 2],
     holder_signature_s: Field,
     beta: Field,
-) -> pub (BabyJubJubPoint, [Field; 2]) {
+) -> pub BabyJubJubPoint {
+    // These labels must stay in the same order as the VC field encoder outside the circuit.
+    // Each checked Merkle leaf is Poseidon(label, value).
     let field_labels = [
-        2118198470571567473536145588563504,
-        2118198470571567473536145588563505,
-        2217739077219273223255122644505107646662330724,
-        6582114,
-        115944579229042,
-        1851878757,
-        133442057126172576218444921,
-        641669309618204160221840285997001192639266124648,
-        34793344991585695257288930408,
-        7562616,
-        2183735902496290402157,
-        559036391039114700679532,
-        1986218340,
+        2118198470571567473536145588563504, // holderPublicKey.x
+        2118198470571567473536145588563505, // holderPublicKey.y
+        2217739077219273223255122644505107646662330724, // credentialSubject.id
+        6582114, // dateOfBirth
+        115944579229042, // issuer.id
+        1851878757, // name
+        133442057126172576218444921, // nationality
+        34793344991585695257288930408, // placeOfBirth
+        7562616, // sex
+        2183735902496290402157, // validFrom
+        559036391039114700679532, // validUntil
+        1986218340, // vc.id
     ];
 
-    for i in 0..13 {
+    // The first 12 leaves carry the labeled VC fields.
+    // The tree is 16 leaves wide, so the remaining leaves are padding slots.
+    for i in 0..12 {
         let computed_leaf = hash2(field_labels[i], field_values[i]);
         assert(computed_leaf == merkle_leaves[i]);
     }
 
     let root = merkle_root_16(merkle_leaves);
-    let signed_message = hash2(domain_separator, root);
+    // In this circuit variant, the issuer signature is over the Merkle root hash only.
+    let signed_message = hash_n([root]);
     let issuer_valid = eddsa_verify_poseidon(
         signer_pub_key[0],
         signer_pub_key[1],
@@ -136,19 +141,28 @@ fn main(
     );
     assert(issuer_valid);
 
+    // The holder signs the derived private identifier to prove control of the holder key
+    // embedded in the VC itself.
     let hash_id = compute_hash_id(
         field_values,
     );
+    let blinded = blinded_query(beta, hash_id);
+    let holder_auth_message = hash_n([
+        HOLDER_OPRF_AUTH_DOMAIN,
+        request_id_field,
+        blinded.x,
+        blinded.y,
+    ]);
     let holder_valid = eddsa_verify_poseidon(
         field_values[0],
         field_values[1],
         holder_signature_s,
         holder_signature_r8[0],
         holder_signature_r8[1],
-        hash_id,
+        holder_auth_message,
     );
     assert(holder_valid);
 
-    let blinded = blinded_query(beta, hash_id);
-    (blinded, [field_values[0], field_values[1]])
+    // Output only the blinded OPRF query point.
+    blinded
 }

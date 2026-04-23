@@ -86,7 +86,6 @@ function App() {
     name: "Jan Novak",
     dateOfBirth: "1990-06-15",
     placeOfBirth: "Prague",
-    permanentAddress: "Main St 123, Prague",
     nationality: "Czech",
     sex: "male",
   });
