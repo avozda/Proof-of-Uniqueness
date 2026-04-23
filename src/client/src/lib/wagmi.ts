@@ -27,5 +27,5 @@ export const config = createConfig({
 
 export const CONTRACT_ADDRESSES = {
   identityRegistry:
-    "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512" as `0x${string}`,
+    "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318" as `0x${string}`,
 };

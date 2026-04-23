@@ -81,7 +81,7 @@ PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
 
 After deployment, update the client contract address in:
 
-- [src/client/src/lib/wagmi.ts](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/lib/wagmi.ts:1)
+- [src/client/src/lib/wagmi.ts](./src/client/src/lib/wagmi.ts)
 
 If you redeploy `IdentityRegistry`, the client must point to the new address.
 
