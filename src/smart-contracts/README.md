@@ -62,19 +62,17 @@ If your terminal is non-interactive and prompts still fail, add:
   1. `oprfPkX`
   2. `oprfPkY`
   3. `validUntil`
-  4. `holderPubKeyX`
-  5. `holderPubKeyY`
-  6. `issuerPubKeyX`
-  7. `issuerPubKeyY`
-  8. `oprfKeyId`
-  9. `oprfEpoch`
-  10. `nullifier` (proof return value)
-- Enrollment also stores a wallet `revocationAddress`; that wallet must sign the enrollment authorization.
+  4. `issuerPubKeyX`
+  5. `issuerPubKeyY`
+  6. `oprfKeyId`
+  7. `oprfEpoch`
+  8. `nullifier` (proof return value)
+- Enrollment also stores a wallet `walletAddress`; that wallet must sign the enrollment authorization.
 - Revocation is authorized by an EIP-712 wallet signature over `nullifier` and `deadline`.
 - Trusted issuers are stored as `keccak256(issuerPubKeyX, issuerPubKeyY)` hashes.
 - Trusted OPRF public key is enforced on `enroll(...)` by matching signals `oprfPkX/oprfPkY` to contract state.
 - Owners can rotate trusted OPRF key with `setTrustedOprfPublicKey(pkX, pkY)`.
-- Revocation uses `revoke(nullifier, deadline, signature)` and checks the signature against the stored revocation address.
+- Revocation uses `revoke(nullifier, deadline, signature)` and checks the signature against the stored wallet address.
 - `script/IdentityRegistry.s.sol` supports env overrides:
   - `OPRF_PUB_KEY_X`
   - `OPRF_PUB_KEY_Y`

@@ -23,20 +23,16 @@ contract IdentityRegistryE2ETest is Test {
         pure
         returns (bytes32[] memory s)
     {
-        s = new bytes32[](10);
+        s = new bytes32[](6);
         s[0] = bytes32(OPRF_PK_X);
         s[1] = bytes32(OPRF_PK_Y);
         s[2] = bytes32(validUntil);
-        s[3] = bytes32(uint256(12345));
-        s[4] = bytes32(uint256(67890));
-        s[5] = bytes32(issuerX);
-        s[6] = bytes32(issuerY);
-        s[7] = bytes32(uint256(3));
-        s[8] = bytes32(uint256(1));
-        s[9] = bytes32(nullifier);
+        s[3] = bytes32(issuerX);
+        s[4] = bytes32(issuerY);
+        s[5] = bytes32(nullifier);
     }
 
-    function _revocationAddress() internal view returns (address) {
+    function _walletAddress() internal view returns (address) {
         return vm.addr(REVOCATION_PRIVATE_KEY);
     }
 
@@ -45,12 +41,12 @@ contract IdentityRegistryE2ETest is Test {
         return abi.encodePacked(r, s, v);
     }
 
-    function _enroll(IdentityRegistry registry, bytes memory proof, bytes32[] memory signals, address revocationAddress)
+    function _enroll(IdentityRegistry registry, bytes memory proof, bytes32[] memory signals, address walletAddress)
         internal
     {
         bytes memory signature =
-            _sign(REVOCATION_PRIVATE_KEY, registry.hashEnrollmentAuthorization(proof, signals, revocationAddress));
-        registry.enroll(proof, signals, revocationAddress, signature);
+            _sign(REVOCATION_PRIVATE_KEY, registry.hashEnrollmentAuthorization(proof, signals, walletAddress));
+        registry.enroll(proof, signals, walletAddress, signature);
     }
 
     function testE2E_MockVerifier_EnrollAndReadBack() public {
@@ -62,17 +58,13 @@ contract IdentityRegistryE2ETest is Test {
         bytes memory proof = hex"01";
         bytes32[] memory signals = _signals(777, block.timestamp + 3600, ISSUER_X, ISSUER_Y);
 
-        _enroll(registry, proof, signals, _revocationAddress());
+        _enroll(registry, proof, signals, _walletAddress());
 
         IdentityRegistry.IdentityRecord memory record = registry.getIdentity(777);
         assertEq(record.validUntil, block.timestamp + 3600);
         assertEq(record.issuerPubKeyX, ISSUER_X);
         assertEq(record.issuerPubKeyY, ISSUER_Y);
-        assertEq(record.holderPubKeyX, 12345);
-        assertEq(record.holderPubKeyY, 67890);
-        assertEq(record.oprfKeyId, 3);
-        assertEq(record.oprfEpoch, 1);
-        assertEq(record.revocationAddress, _revocationAddress());
+        assertEq(record.walletAddress, _walletAddress());
         assertTrue(record.exists);
         assertTrue(registry.isIdentityValid(777));
         assertEq(registry.getIdentityCount(), 1);
@@ -86,9 +78,13 @@ contract IdentityRegistryE2ETest is Test {
 
         bytes memory malformedProof = hex"deadbeef";
         bytes32[] memory signals = _signals(888, block.timestamp + 3600, ISSUER_X, ISSUER_Y);
+        bytes memory signature = _sign(
+            REVOCATION_PRIVATE_KEY,
+            registry.hashEnrollmentAuthorization(malformedProof, signals, _walletAddress())
+        );
 
         vm.expectRevert(IdentityRegistry.InvalidProof.selector);
-        registry.enroll(malformedProof, signals, _revocationAddress(), hex"01");
+        registry.enroll(malformedProof, signals, _walletAddress(), signature);
     }
 
     function testE2E_RevertOnUntrustedOprfKey() public {
@@ -102,7 +98,7 @@ contract IdentityRegistryE2ETest is Test {
         signals[0] = bytes32(uint256(OPRF_PK_X + 1));
 
         vm.expectRevert(IdentityRegistry.UntrustedOprfPublicKey.selector);
-        registry.enroll(proof, signals, _revocationAddress(), hex"01");
+        registry.enroll(proof, signals, _walletAddress(), hex"01");
     }
 
     function testE2E_RevokeDeletesIdentity() public {
@@ -110,7 +106,7 @@ contract IdentityRegistryE2ETest is Test {
         IdentityRegistry registry = new IdentityRegistry(address(mockVerifier), OPRF_PK_X, OPRF_PK_Y);
 
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
-        _enroll(registry, hex"01", _signals(777, block.timestamp + 3600, ISSUER_X, ISSUER_Y), _revocationAddress());
+        _enroll(registry, hex"01", _signals(777, block.timestamp + 3600, ISSUER_X, ISSUER_Y), _walletAddress());
 
         uint256 deadline = block.timestamp + 1 hours;
         bytes memory signature = _sign(REVOCATION_PRIVATE_KEY, registry.hashRevocationAuthorization(777, deadline));

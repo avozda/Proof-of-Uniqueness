@@ -11,7 +11,7 @@ const REVERT_SELECTOR_MESSAGES: Record<string, string> = {
     "Only the contract owner can perform this action. Connect the deployer wallet.",
   "0xd3c12856": "No identity record exists for this hash ID.",
   "0x0ce8eac5": "This identity credential has expired on-chain.",
-  "0xe518fe70": "Connect a wallet before enrolling this identity.",
+  "0xa5f90a11": "Connect a wallet before enrolling this identity.",
   "0xdef8823b": "Wallet signature did not authorize this enrollment.",
   "0xa9615b40": "Wallet signature did not authorize this revocation.",
   "0x41888f68": "Revocation signature has expired. Sign a new revocation request.",
@@ -29,14 +29,16 @@ const ERROR_NAME_MESSAGES: Record<string, string> = {
     "Public signals length is invalid for this verifier.",
   InvalidFieldElement:
     "One or more public signals are outside the field modulus.",
-  InvalidOprfMetadata: "Invalid OPRF metadata (key id/epoch).",
+  InvalidOprfMetadata: "Invalid OPRF public key configuration (zero coordinates).",
   UntrustedOprfPublicKey:
     "Proof uses an OPRF public key that is not trusted by this contract.",
-  InvalidRevocationAddress: REVERT_SELECTOR_MESSAGES["0xe518fe70"],
+  InvalidWalletAddress: REVERT_SELECTOR_MESSAGES["0xa5f90a11"],
   InvalidEnrollmentAuthorization: REVERT_SELECTOR_MESSAGES["0xdef8823b"],
   InvalidRevocationSignature: REVERT_SELECTOR_MESSAGES["0xa9615b40"],
   RevocationSignatureExpired: REVERT_SELECTOR_MESSAGES["0x41888f68"],
   InvalidSignature: REVERT_SELECTOR_MESSAGES["0x8baa579f"],
+  InvalidNullifier: "Enrollment nullifier cannot be zero.",
+  InvalidIssuerPublicKey: "Issuer public key coordinates cannot be zero.",
 };
 
 function isHexData(value: unknown): value is `0x${string}` {
@@ -165,8 +167,8 @@ export function formatIdentityRegistryTxError(err: Error): string {
   if (msg.includes("UntrustedOprfPublicKey")) {
     return ERROR_NAME_MESSAGES.UntrustedOprfPublicKey;
   }
-  if (msg.includes("InvalidRevocationAddress")) {
-    return ERROR_NAME_MESSAGES.InvalidRevocationAddress;
+  if (msg.includes("InvalidWalletAddress")) {
+    return ERROR_NAME_MESSAGES.InvalidWalletAddress;
   }
   if (msg.includes("InvalidEnrollmentAuthorization")) {
     return ERROR_NAME_MESSAGES.InvalidEnrollmentAuthorization;

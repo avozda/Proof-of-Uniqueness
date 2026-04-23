@@ -111,12 +111,8 @@ fn main(
     oprf_response: BabyJubJubPoint,
     // Additional public outputs needed on-chain
     valid_until: pub Field,
-    holder_pub_key_x: pub Field,
-    holder_pub_key_y: pub Field,
     issuer_pub_key_x: pub Field,
     issuer_pub_key_y: pub Field,
-    oprf_key_id: pub Field,
-    oprf_epoch: pub Field,
 ) -> pub Field {
     // These labels must stay in the same order as the VC field encoder outside the circuit.
     // Each checked Merkle leaf is Poseidon(label, value).
@@ -160,14 +156,10 @@ fn main(
     );
 
     // These public values are re-exposed so the on-chain registry can bind the proof
-    // to expiry, issuer identity, holder key, and the selected trusted OPRF key metadata.
+    // to expiry and issuer identity (OPRF server key is anchored separately on-chain).
     assert(valid_until == field_values[10]);
-    assert(holder_pub_key_x == field_values[0]);
-    assert(holder_pub_key_y == field_values[1]);
     assert(issuer_pub_key_x == signer_pub_key[0]);
     assert(issuer_pub_key_y == signer_pub_key[1]);
-    assert(oprf_key_id != 0);
-    assert(oprf_epoch != 0);
 
     // Verifies the OPRF server response plus its DLEQ proof, and returns the final OPRF output.
     verified_oprf(

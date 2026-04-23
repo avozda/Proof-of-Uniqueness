@@ -94,12 +94,8 @@ export interface VcOprfEnrollmentProofPackage {
     oprfPkX: string;
     oprfPkY: string;
     validUntil: string;
-    holderPubKeyX: string;
-    holderPubKeyY: string;
     issuerPubKeyX: string;
     issuerPubKeyY: string;
-    oprfKeyId: string;
-    oprfEpoch: string;
     nullifier: string;
   };
 }
@@ -123,8 +119,6 @@ type OprfTranscriptInput = {
   oprfResponseBlindedY: bigint;
   oprfResponseX: bigint;
   oprfResponseY: bigint;
-  oprfKeyId: bigint;
-  oprfEpoch: bigint;
 };
 
 function toHex(bytes: Uint8Array): `0x${string}` {
@@ -267,8 +261,6 @@ function buildNoirInputs(
   const fieldValues = buildFieldValuesOrdered(vc);
   const merkleLeaves = buildMerkleLeaves(fieldValues);
   const issuerSig = decodeIssuerSig(vc);
-  const holderX = BigInt(vc.credentialSubject.holderPublicKey.x);
-  const holderY = BigInt(vc.credentialSubject.holderPublicKey.y);
   if (issuerSig.signerPubKey[0] !== issuerPublicKey.x || issuerSig.signerPubKey[1] !== issuerPublicKey.y) {
     throw new Error("Issuer key in VC proof does not match active issuer key");
   }
@@ -299,12 +291,8 @@ function buildNoirInputs(
       y: transcript.oprfResponseY.toString(),
     },
     valid_until: fieldValues[10].toString(),
-    holder_pub_key_x: holderX.toString(),
-    holder_pub_key_y: holderY.toString(),
     issuer_pub_key_x: issuerPublicKey.x.toString(),
     issuer_pub_key_y: issuerPublicKey.y.toString(),
-    oprf_key_id: transcript.oprfKeyId.toString(),
-    oprf_epoch: transcript.oprfEpoch.toString(),
   };
   return debugInputs;
 }
@@ -645,10 +633,6 @@ async function fetchLiveOprfTranscript(
     oprfResponseBlindedY: normalizeField(blindedResponse.y),
     oprfResponseX: normalizeField(unblindedResponse.x),
     oprfResponseY: normalizeField(unblindedResponse.y),
-    oprfKeyId: 3n,
-    // Circuit and contract currently require non-zero metadata fields.
-    // Local OPRF sessions can report epoch=0, so clamp to 1 for now.
-    oprfEpoch: BigInt(Math.max(1, sessions.epoch)),
   };
 }
 
@@ -664,20 +648,16 @@ export async function validateOprfNetworkConfig(
 }
 
 function decodeFromPublicSignals(signals: bigint[]) {
-  if (signals.length !== 10) {
-    throw new Error(`Expected 10 public signals, got ${signals.length}`);
+  if (signals.length !== 6) {
+    throw new Error(`Expected 6 public signals, got ${signals.length}`);
   }
   return {
     oprfPkX: signals[0].toString(),
     oprfPkY: signals[1].toString(),
     validUntil: signals[2].toString(),
-    holderPubKeyX: signals[3].toString(),
-    holderPubKeyY: signals[4].toString(),
-    issuerPubKeyX: signals[5].toString(),
-    issuerPubKeyY: signals[6].toString(),
-    oprfKeyId: signals[7].toString(),
-    oprfEpoch: signals[8].toString(),
-    nullifier: signals[9].toString(),
+    issuerPubKeyX: signals[3].toString(),
+    issuerPubKeyY: signals[4].toString(),
+    nullifier: signals[5].toString(),
   };
 }
 

@@ -31,27 +31,23 @@ contract IdentityRegistryGasTest is Test {
     uint256 public constant OPRF_PK_X = 111;
     uint256 public constant OPRF_PK_Y = 222;
     uint256 public constant REVOCATION_PRIVATE_KEY = 0xA11CE;
-    address public revocationAddress;
+    address public walletAddress;
 
     function setUp() public {
         verifier = new MockUltraVerifier();
         registry = new IdentityRegistry(address(verifier), OPRF_PK_X, OPRF_PK_Y);
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
-        revocationAddress = vm.addr(REVOCATION_PRIVATE_KEY);
+        walletAddress = vm.addr(REVOCATION_PRIVATE_KEY);
     }
 
     function _signals(uint256 nullifier) internal view returns (bytes32[] memory signals) {
-        signals = new bytes32[](10);
+        signals = new bytes32[](6);
         signals[0] = bytes32(OPRF_PK_X); // oprfPkX
         signals[1] = bytes32(OPRF_PK_Y); // oprfPkY
         signals[2] = bytes32(block.timestamp + 1000); // validUntil
-        signals[3] = bytes32(uint256(12345)); // holderPubKeyX
-        signals[4] = bytes32(uint256(67890)); // holderPubKeyY
-        signals[5] = bytes32(ISSUER_X); // issuerPubKeyX
-        signals[6] = bytes32(ISSUER_Y); // issuerPubKeyY
-        signals[7] = bytes32(uint256(3)); // oprfKeyId
-        signals[8] = bytes32(uint256(1)); // oprfEpoch
-        signals[9] = bytes32(nullifier); // nullifier
+        signals[3] = bytes32(ISSUER_X); // issuerPubKeyX
+        signals[4] = bytes32(ISSUER_Y); // issuerPubKeyY
+        signals[5] = bytes32(nullifier); // nullifier
     }
 
     function _sign(uint256 privateKey, bytes32 digest) internal view returns (bytes memory signature) {
@@ -61,8 +57,8 @@ contract IdentityRegistryGasTest is Test {
 
     function _enroll(bytes memory proof, bytes32[] memory signals) internal {
         bytes memory signature =
-            _sign(REVOCATION_PRIVATE_KEY, registry.hashEnrollmentAuthorization(proof, signals, revocationAddress));
-        registry.enroll(proof, signals, revocationAddress, signature);
+            _sign(REVOCATION_PRIVATE_KEY, registry.hashEnrollmentAuthorization(proof, signals, walletAddress));
+        registry.enroll(proof, signals, walletAddress, signature);
     }
 
     function _revoke(uint256 nullifier, uint256 deadline) internal {
@@ -80,25 +76,29 @@ contract IdentityRegistryGasTest is Test {
     function testRevertUntrustedIssuer() public {
         bytes memory proof = hex"01";
         bytes32[] memory signals = _signals(777);
-        signals[5] = bytes32(uint256(999));
-        signals[6] = bytes32(uint256(1000));
+        signals[3] = bytes32(uint256(999));
+        signals[4] = bytes32(uint256(1000));
+        bytes memory signature =
+            _sign(REVOCATION_PRIVATE_KEY, registry.hashEnrollmentAuthorization(proof, signals, walletAddress));
         vm.expectRevert(IdentityRegistry.IssuerNotTrusted.selector);
-        registry.enroll(proof, signals, revocationAddress, hex"01");
+        registry.enroll(proof, signals, walletAddress, signature);
     }
 
     function testRevertDuplicateNullifier() public {
         bytes memory proof = hex"01";
         bytes32[] memory signals = _signals(777);
         _enroll(proof, signals);
+        bytes memory signature =
+            _sign(REVOCATION_PRIVATE_KEY, registry.hashEnrollmentAuthorization(proof, signals, walletAddress));
         vm.expectRevert(IdentityRegistry.IdentityAlreadyExists.selector);
-        registry.enroll(proof, signals, revocationAddress, hex"01");
+        registry.enroll(proof, signals, walletAddress, signature);
     }
 
     function testRevertInvalidSignalLength() public {
         bytes memory proof = hex"01";
-        bytes32[] memory signals = new bytes32[](9);
+        bytes32[] memory signals = new bytes32[](5);
         vm.expectRevert(IdentityRegistry.InvalidPublicSignalLength.selector);
-        registry.enroll(proof, signals, revocationAddress, hex"01");
+        registry.enroll(proof, signals, walletAddress, hex"01");
     }
 
     function testRevertInvalidFieldElement() public {
@@ -106,44 +106,37 @@ contract IdentityRegistryGasTest is Test {
         bytes32[] memory signals = _signals(777);
         signals[0] = bytes32(uint256(21888242871839275222246405745257275088548364400416034343698204186575808495617));
         vm.expectRevert(IdentityRegistry.InvalidFieldElement.selector);
-        registry.enroll(proof, signals, revocationAddress, hex"01");
-    }
-
-    function testRevertInvalidOprfMetadata() public {
-        bytes memory proof = hex"01";
-        bytes32[] memory signals = _signals(777);
-        signals[7] = bytes32(uint256(0));
-        vm.expectRevert(IdentityRegistry.InvalidOprfMetadata.selector);
-        registry.enroll(proof, signals, revocationAddress, hex"01");
-
-        signals = _signals(778);
-        signals[8] = bytes32(uint256(0));
-        vm.expectRevert(IdentityRegistry.InvalidOprfMetadata.selector);
-        registry.enroll(proof, signals, revocationAddress, hex"01");
+        registry.enroll(proof, signals, walletAddress, hex"01");
     }
 
     function testRevertExpiredIdentity() public {
         bytes memory proof = hex"01";
         bytes32[] memory signals = _signals(777);
         signals[2] = bytes32(block.timestamp - 1);
+        bytes memory signature =
+            _sign(REVOCATION_PRIVATE_KEY, registry.hashEnrollmentAuthorization(proof, signals, walletAddress));
         vm.expectRevert(IdentityRegistry.IdentityExpired.selector);
-        registry.enroll(proof, signals, revocationAddress, hex"01");
+        registry.enroll(proof, signals, walletAddress, signature);
     }
 
     function testRevertInvalidProofOnFalse() public {
         verifier.setVerifyResult(false);
         bytes memory proof = hex"01";
         bytes32[] memory signals = _signals(777);
+        bytes memory signature =
+            _sign(REVOCATION_PRIVATE_KEY, registry.hashEnrollmentAuthorization(proof, signals, walletAddress));
         vm.expectRevert(IdentityRegistry.InvalidProof.selector);
-        registry.enroll(proof, signals, revocationAddress, hex"01");
+        registry.enroll(proof, signals, walletAddress, signature);
     }
 
     function testRevertInvalidProofOnVerifierRevert() public {
         verifier.setShouldRevert(true);
         bytes memory proof = hex"01";
         bytes32[] memory signals = _signals(777);
+        bytes memory signature =
+            _sign(REVOCATION_PRIVATE_KEY, registry.hashEnrollmentAuthorization(proof, signals, walletAddress));
         vm.expectRevert(IdentityRegistry.InvalidProof.selector);
-        registry.enroll(proof, signals, revocationAddress, hex"01");
+        registry.enroll(proof, signals, walletAddress, signature);
     }
 
     function testRevertUntrustedOprfPublicKey() public {
@@ -151,13 +144,24 @@ contract IdentityRegistryGasTest is Test {
         bytes32[] memory signals = _signals(777);
         signals[0] = bytes32(uint256(OPRF_PK_X + 100));
         vm.expectRevert(IdentityRegistry.UntrustedOprfPublicKey.selector);
-        registry.enroll(proof, signals, revocationAddress, hex"01");
+        registry.enroll(proof, signals, walletAddress, hex"01");
     }
 
-    function testRevertZeroRevocationAddress() public {
+    function testRevertInvalidNullifier() public {
+        bytes32[] memory signals = _signals(0);
+        vm.expectRevert(IdentityRegistry.InvalidNullifier.selector);
+        registry.enroll(hex"01", signals, walletAddress, hex"01");
+    }
+
+    function testRevertAddTrustedIssuerZeroKey() public {
+        vm.expectRevert(IdentityRegistry.InvalidIssuerPublicKey.selector);
+        registry.addTrustedIssuer(0, 0);
+    }
+
+    function testRevertZeroWalletAddress() public {
         bytes memory proof = hex"01";
         bytes32[] memory signals = _signals(777);
-        vm.expectRevert(IdentityRegistry.InvalidRevocationAddress.selector);
+        vm.expectRevert(IdentityRegistry.InvalidWalletAddress.selector);
         registry.enroll(proof, signals, address(0), hex"01");
     }
 
@@ -165,9 +169,9 @@ contract IdentityRegistryGasTest is Test {
         bytes memory proof = hex"01";
         bytes32[] memory signals = _signals(777);
         bytes memory signature =
-            _sign(REVOCATION_PRIVATE_KEY + 1, registry.hashEnrollmentAuthorization(proof, signals, revocationAddress));
+            _sign(REVOCATION_PRIVATE_KEY + 1, registry.hashEnrollmentAuthorization(proof, signals, walletAddress));
         vm.expectRevert(IdentityRegistry.InvalidEnrollmentAuthorization.selector);
-        registry.enroll(proof, signals, revocationAddress, signature);
+        registry.enroll(proof, signals, walletAddress, signature);
     }
 
     function testOwnerCanRotateTrustedOprfPublicKey() public {
@@ -178,7 +182,7 @@ contract IdentityRegistryGasTest is Test {
         bytes memory proof = hex"01";
         bytes32[] memory oldSignals = _signals(779);
         vm.expectRevert(IdentityRegistry.UntrustedOprfPublicKey.selector);
-        registry.enroll(proof, oldSignals, revocationAddress, hex"01");
+        registry.enroll(proof, oldSignals, walletAddress, hex"01");
 
         bytes32[] memory newSignals = _signals(780);
         newSignals[0] = bytes32(uint256(OPRF_PK_X + 1));
@@ -230,10 +234,8 @@ contract IdentityRegistryGasTest is Test {
 
         vm.warp(block.timestamp + 2);
 
-        (uint256 purged, uint256 scanned, uint256 nextCursor) = registry.purgeInvalidRecords(10);
+        uint256 purged = registry.purgeInvalidRecords();
         assertEq(purged, 1);
-        assertEq(scanned, 2);
-        assertEq(nextCursor, 0);
 
         vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
         registry.getIdentity(910);
@@ -248,31 +250,21 @@ contract IdentityRegistryGasTest is Test {
 
         registry.removeTrustedIssuer(ISSUER_X, ISSUER_Y);
 
-        (uint256 purged, uint256 scanned, uint256 nextCursor) = registry.purgeInvalidRecords(10);
+        uint256 purged = registry.purgeInvalidRecords();
         assertEq(purged, 1);
-        assertEq(scanned, 1);
-        assertEq(nextCursor, 0);
+        assertEq(registry.purgeInvalidRecords(), 0);
 
         vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
         registry.getIdentity(920);
     }
 
-    function testPurgeInvalidRecordsCursorProgression() public {
+    function testPurgeInvalidRecordsScansFullHistoryEachCall() public {
         bytes memory proof = hex"01";
         _enroll(proof, _signals(930));
         _enroll(proof, _signals(931));
         _enroll(proof, _signals(932));
 
-        (, uint256 scanned1, uint256 cursor1) = registry.purgeInvalidRecords(1);
-        assertEq(scanned1, 1);
-        assertEq(cursor1, 1);
-
-        (, uint256 scanned2, uint256 cursor2) = registry.purgeInvalidRecords(1);
-        assertEq(scanned2, 1);
-        assertEq(cursor2, 2);
-
-        (, uint256 scanned3, uint256 cursor3) = registry.purgeInvalidRecords(1);
-        assertEq(scanned3, 1);
-        assertEq(cursor3, 0);
+        assertEq(registry.purgeInvalidRecords(), 0);
+        assertEq(registry.purgeInvalidRecords(), 0);
     }
 }

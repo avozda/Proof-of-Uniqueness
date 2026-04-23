@@ -230,12 +230,8 @@ function buildEnrollmentInputs(ctx, transcript) {
       y: norm(transcript.unblinded.y),
     },
     valid_until: ctx.fieldValues[10].toString(),
-    holder_pub_key_x: ctx.fieldValues[0].toString(),
-    holder_pub_key_y: ctx.fieldValues[1].toString(),
     issuer_pub_key_x: ctx.issuerPubKey[0].toString(),
     issuer_pub_key_y: ctx.issuerPubKey[1].toString(),
-    oprf_key_id: "3",
-    oprf_epoch: "1",
   };
 }
 

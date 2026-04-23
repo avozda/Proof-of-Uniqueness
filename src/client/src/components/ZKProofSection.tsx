@@ -33,7 +33,7 @@ const ENROLL_TYPES = {
     { name: "nullifier", type: "uint256" },
     { name: "publicSignalsHash", type: "bytes32" },
     { name: "proofHash", type: "bytes32" },
-    { name: "revocationAddress", type: "address" },
+    { name: "walletAddress", type: "address" },
   ],
 } as const;
 
@@ -247,7 +247,7 @@ export function ZKProofSection({
           nullifier: BigInt(proofPackage.decoded.nullifier),
           publicSignalsHash: keccak256(concatHex(proofPackage.publicSignals as Hex[])),
           proofHash: keccak256(proofPackage.proof),
-          revocationAddress: address,
+          walletAddress: address,
         },
       });
       writeContract({
@@ -404,23 +404,10 @@ export function ZKProofSection({
                 <code>{proofPackage.decoded.validUntil}</code>
               </div>
               <div className="output-item">
-                <span className="output-label">Holder Public Key</span>
-                <code>
-                  [{proofPackage.decoded.holderPubKeyX.slice(0, 20)}...,{" "}
-                  {proofPackage.decoded.holderPubKeyY.slice(0, 20)}...]
-                </code>
-              </div>
-              <div className="output-item">
                 <span className="output-label">Issuer Public Key</span>
                 <code>
                   [{proofPackage.decoded.issuerPubKeyX.slice(0, 20)}...,{" "}
                   {proofPackage.decoded.issuerPubKeyY.slice(0, 20)}...]
-                </code>
-              </div>
-              <div className="output-item">
-                <span className="output-label">OPRF Key / Epoch</span>
-                <code>
-                  {proofPackage.decoded.oprfKeyId} / {proofPackage.decoded.oprfEpoch}
                 </code>
               </div>
             </div>
