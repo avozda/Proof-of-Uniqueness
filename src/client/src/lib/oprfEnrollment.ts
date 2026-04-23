@@ -129,7 +129,8 @@ function toHex(bytes: Uint8Array): `0x${string}` {
 
 function toBytes32Hex(value: bigint): `0x${string}` {
   if (value < 0n) throw new Error("Negative values are not allowed");
-  if (value >= FIELD_MODULUS) throw new Error("Signal value exceeds field modulus");
+  if (value >= FIELD_MODULUS)
+    throw new Error("Signal value exceeds field modulus");
   return `0x${value.toString(16).padStart(64, "0")}`;
 }
 
@@ -180,6 +181,7 @@ function padMerkleLeaves(leaves: bigint[]): bigint[] {
 }
 
 function buildFieldValuesOrdered(vc: VerifiableCredential): bigint[] {
+  // Keep this order aligned with VC_FIELD_LABELS and the Noir circuit inputs.
   const s = vc.credentialSubject;
   return [
     BigInt(s.holderPublicKey.x),
@@ -210,7 +212,9 @@ function decodeIssuerSig(vc: VerifiableCredential): {
   signatureS: bigint;
 } {
   const sig = decodeProofValue(vc.proof.proofValue);
-  const pk = extractPublicKeyFromVerificationMethod(vc.proof.verificationMethod);
+  const pk = extractPublicKeyFromVerificationMethod(
+    vc.proof.verificationMethod,
+  );
   return {
     signerPubKey: [BigInt(pk.x), BigInt(pk.y)],
     signatureR8: [BigInt(sig.signatureR8[0]), BigInt(sig.signatureR8[1])],
@@ -239,6 +243,7 @@ async function loadVcBlindedQueryAuthCircuitArtifact(): Promise<CompiledCircuit>
 }
 
 function computeHashIdFromVc(vc: VerifiableCredential): bigint {
+  // Hash only the identity fields that define uniqueness, not the full VC payload.
   const fieldValues = buildFieldValuesOrdered(vc);
   return normalizeField(
     poseidonHash([
@@ -256,12 +261,24 @@ function computeHashIdFromVc(vc: VerifiableCredential): bigint {
 function buildNoirInputs(
   vc: VerifiableCredential,
   issuerPublicKey: { x: bigint; y: bigint },
+  holderKeyPair: HolderKeyPair,
   transcript: OprfTranscriptInput,
 ) {
   const fieldValues = buildFieldValuesOrdered(vc);
   const merkleLeaves = buildMerkleLeaves(fieldValues);
   const issuerSig = decodeIssuerSig(vc);
-  if (issuerSig.signerPubKey[0] !== issuerPublicKey.x || issuerSig.signerPubKey[1] !== issuerPublicKey.y) {
+  const holderX = BigInt(vc.credentialSubject.holderPublicKey.x);
+  const holderY = BigInt(vc.credentialSubject.holderPublicKey.y);
+  if (
+    holderX !== holderKeyPair.publicKey.x ||
+    holderY !== holderKeyPair.publicKey.y
+  ) {
+    throw new Error("Holder key in VC does not match active holder keypair");
+  }
+  if (
+    issuerSig.signerPubKey[0] !== issuerPublicKey.x ||
+    issuerSig.signerPubKey[1] !== issuerPublicKey.y
+  ) {
     throw new Error("Issuer key in VC proof does not match active issuer key");
   }
 
@@ -269,12 +286,17 @@ function buildNoirInputs(
     throw new Error("validUntil field is not a positive unix timestamp");
   }
 
-  const debugInputs = {
+  const hashId = computeHashIdFromVc(vc);
+  const holderSig = signMessageWithHolderKey(holderKeyPair.privateKey, hashId);
+
+  return {
     merkle_leaves: merkleLeaves.map((x) => x.toString()),
     field_values: fieldValues.map((x) => x.toString()),
     signer_pub_key: issuerSig.signerPubKey.map((x) => x.toString()),
     signature_r8: issuerSig.signatureR8.map((x) => x.toString()),
     signature_s: issuerSig.signatureS.toString(),
+    holder_signature_r8: holderSig.R8.map((x) => normalizeField(x).toString()),
+    holder_signature_s: normalizeField(holderSig.S).toString(),
     beta: transcript.beta.toString(),
     oprf_pk: {
       x: transcript.oprfPkX.toString(),
@@ -294,7 +316,6 @@ function buildNoirInputs(
     issuer_pub_key_x: issuerPublicKey.x.toString(),
     issuer_pub_key_y: issuerPublicKey.y.toString(),
   };
-  return debugInputs;
 }
 
 async function generateWithNoir(
@@ -326,7 +347,11 @@ async function generateWithNoir(
         .decode(bytes.slice(0, 16))
         .replace(/\s+/g, " ");
       const contentType = response.headers.get("content-type") ?? "<none>";
-      const isWasmMagic = bytes[0] === 0x00 && bytes[1] === 0x61 && bytes[2] === 0x73 && bytes[3] === 0x6d;
+      const isWasmMagic =
+        bytes[0] === 0x00 &&
+        bytes[1] === 0x61 &&
+        bytes[2] === 0x73 &&
+        bytes[3] === 0x6d;
 
       void magic;
       void prefixText;
@@ -348,6 +373,7 @@ async function generateWithNoir(
 
     let response: Response;
 
+    // Rewrite bb.js runtime asset requests to the public files Vite serves at root.
     if (requested.includes("barretenberg-threads.wasm")) {
       response = await realBbFetch("/barretenberg-threads.wasm", init);
       await inspectWasmResponse(response);
@@ -388,7 +414,10 @@ async function generateWithNoir(
         "Constraint unsatisfied while generating proof. This usually means the live OPRF transcript values are inconsistent with the enrollment circuit relations.",
       );
     }
-    if (m.includes("expected magic word") || m.includes("Incorrect response MIME type")) {
+    if (
+      m.includes("expected magic word") ||
+      m.includes("Incorrect response MIME type")
+    ) {
       throw new Error(
         "WASM asset loading failed for Noir runtime. Ensure /noirc_abi_wasm_bg.wasm and /acvm_js_bg.wasm are reachable and not rewritten by dev server.",
       );
@@ -419,7 +448,11 @@ async function generateWithNoir(
     return { verified, vkHash };
   };
 
-  const withTimeout = async <T>(label: string, ms: number, p: Promise<T>): Promise<T> => {
+  const withTimeout = async <T>(
+    label: string,
+    ms: number,
+    p: Promise<T>,
+  ): Promise<T> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
@@ -446,29 +479,31 @@ async function generateWithNoir(
     ).catch(wrapNoirError);
     void witness;
 
-    const backend = new BarretenbergBackend(circuit as never, BB_BACKEND_OPTIONS);
+    const backend = new BarretenbergBackend(
+      circuit as never,
+      BB_BACKEND_OPTIONS,
+    );
     try {
-      const proofData =
-        (await withTimeout(
-          "backend.generateProof",
-          180_000,
-          backend.generateProof(witness),
-        ).catch(wrapNoirError)) as RawProofData;
+      const proofData = (await withTimeout(
+        "backend.generateProof",
+        180_000,
+        backend.generateProof(witness),
+      ).catch(wrapNoirError)) as RawProofData;
       const selfCheck = await withTimeout(
         "backend.verifyProof",
         60_000,
         verifyInBackend(backend, proofData as RawProofData),
       ).catch(wrapNoirError);
       if (!selfCheck.verified) {
-        throw new Error("Local backend rejected the generated proof during self-check");
+        throw new Error(
+          "Local backend rejected the generated proof during self-check",
+        );
       }
 
       return proofData;
     } finally {
       await backend.destroy();
     }
-  } catch (err) {
-    throw err;
   } finally {
     globalThis.fetch = realBbFetch;
   }
@@ -482,6 +517,7 @@ function buildVcBlindedQueryAuthNoirInputs(
   beta: bigint,
   blindedRequest: { x: bigint; y: bigint },
 ) {
+  // This witness proves the holder can authenticate the blinded OPRF request using the VC.
   const fieldValues = buildFieldValuesOrdered(vc);
   const merkleLeaves = buildMerkleLeaves(fieldValues);
   const issuerSig = decodeIssuerSig(vc);
@@ -497,10 +533,16 @@ function buildVcBlindedQueryAuthNoirInputs(
 
   const holderX = BigInt(vc.credentialSubject.holderPublicKey.x);
   const holderY = BigInt(vc.credentialSubject.holderPublicKey.y);
-  if (holderX !== holderKeyPair.publicKey.x || holderY !== holderKeyPair.publicKey.y) {
+  if (
+    holderX !== holderKeyPair.publicKey.x ||
+    holderY !== holderKeyPair.publicKey.y
+  ) {
     throw new Error("Holder key in VC does not match active holder keypair");
   }
-  if (issuerSig.signerPubKey[0] !== issuerPublicKey.x || issuerSig.signerPubKey[1] !== issuerPublicKey.y) {
+  if (
+    issuerSig.signerPubKey[0] !== issuerPublicKey.x ||
+    issuerSig.signerPubKey[1] !== issuerPublicKey.y
+  ) {
     throw new Error("Issuer key in VC proof does not match active issuer key");
   }
 
@@ -511,7 +553,9 @@ function buildVcBlindedQueryAuthNoirInputs(
     signer_pub_key: issuerSig.signerPubKey.map((x) => x.toString()),
     signature_r8: issuerSig.signatureR8.map((x) => x.toString()),
     signature_s: issuerSig.signatureS.toString(),
-    holder_signature_r8: holderRequestSig.R8.map((x) => normalizeField(x).toString()),
+    holder_signature_r8: holderRequestSig.R8.map((x) =>
+      normalizeField(x).toString(),
+    ),
     holder_signature_s: normalizeField(holderRequestSig.S).toString(),
     beta: beta.toString(),
   };
@@ -526,7 +570,9 @@ async function fetchLiveOprfTranscript(
 ): Promise<OprfTranscriptInput> {
   onProgress?.("Computing VC-derived private hash ID...");
   const hashId = computeHashIdFromVc(vc);
-  const services = network.nodeBases.map((base) => toOprfUri(base, network.authModule));
+  const services = network.nodeBases.map((base) =>
+    toOprfUri(base, network.authModule),
+  );
   const beta = randomBlindingFactor();
   const blindedRequest = blindQuery(hashId, beta);
   const requestId = crypto.randomUUID();
@@ -543,9 +589,15 @@ async function fetchLiveOprfTranscript(
   );
 
   const authPayload = await (async () => {
-    onProgress?.("Generating blinded-query auth proof for node authentication...");
+    // Nodes require a proof-backed auth payload before they will process the blinded query.
+    onProgress?.(
+      "Generating blinded-query auth proof for node authentication...",
+    );
     const vcProofData = await generateWithNoir(vcCircuit, vcInputs);
-    const publicInputsBytes = publicInputsToBytes(vcProofData.publicInputs, "le");
+    const publicInputsBytes = publicInputsToBytes(
+      vcProofData.publicInputs,
+      "le",
+    );
     return {
       api_key: network.apiKey,
       public_inputs: Array.from(publicInputsBytes),
@@ -584,6 +636,7 @@ async function fetchLiveOprfTranscript(
   const proofShares = await finishSessions(sessions, challenge).catch((err) =>
     wrapOprfNodeErrors("session finish", err),
   );
+  // Collapse threshold shares into one transcript we can verify locally and feed into Noir.
   const dlogProof = verifyDlogEquality(
     requestId,
     sessions.oprfPublicKeys[0],
@@ -636,7 +689,7 @@ async function fetchLiveOprfTranscript(
   };
 }
 
-export async function validateOprfNetworkConfig(
+async function validateOprfNetworkConfig(
   network: OprfNetworkConfig,
 ): Promise<void> {
   if (network.nodeBases.length < 1) {
@@ -651,6 +704,7 @@ function decodeFromPublicSignals(signals: bigint[]) {
   if (signals.length !== 6) {
     throw new Error(`Expected 6 public signals, got ${signals.length}`);
   }
+  // Mirror the public signal layout emitted by vc_oprf_enrollment_proof.
   return {
     oprfPkX: signals[0].toString(),
     oprfPkY: signals[1].toString(),
@@ -685,12 +739,15 @@ export async function buildVcOprfEnrollmentProofPackage(
     const noirInputs = buildNoirInputs(
       credential,
       issuerPublicKey,
+      holderKeyPair,
       transcript,
     );
 
     const proofData = await generateWithNoir(circuit, noirInputs);
 
-    const publicSignalsBig = proofData.publicInputs.map((x) => normalizeField(BigInt(x)));
+    const publicSignalsBig = proofData.publicInputs.map((x) =>
+      normalizeField(BigInt(x)),
+    );
     onProgress?.("Finalizing proof package...");
     return {
       proof: toHex(proofData.proof),

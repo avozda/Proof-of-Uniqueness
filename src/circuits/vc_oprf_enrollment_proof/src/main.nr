@@ -102,6 +102,8 @@ fn main(
     signer_pub_key: [Field; 2],
     signature_r8: [Field; 2],
     signature_s: Field,
+    holder_signature_r8: [Field; 2],
+    holder_signature_s: Field,
     // OPRF transcript inputs
     beta: Field,
     oprf_pk: pub BabyJubJubPoint,
@@ -154,6 +156,16 @@ fn main(
     let hash_id = compute_hash_id(
         field_values,
     );
+    // The holder key embedded in the VC must also authorize this private hash_id.
+    let holder_valid = eddsa_verify_poseidon(
+        field_values[0],
+        field_values[1],
+        holder_signature_s,
+        holder_signature_r8[0],
+        holder_signature_r8[1],
+        hash_id,
+    );
+    assert(holder_valid);
 
     // These public values are re-exposed so the on-chain registry can bind the proof
     // to expiry and issuer identity (OPRF server key is anchored separately on-chain).

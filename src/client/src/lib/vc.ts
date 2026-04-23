@@ -53,7 +53,7 @@ export interface FormData {
   sex: string;
 }
 
-export function generatePersonId(): string {
+function generatePersonId(): string {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
   let result = "";
   for (let i = 0; i < 18; i++) {
@@ -62,7 +62,7 @@ export function generatePersonId(): string {
   return `urn:person:${result}`;
 }
 
-export const CRYPTOSUITE_ID = "eddsa-babyjubjub-poseidon-2024";
+const CRYPTOSUITE_ID = "eddsa-babyjubjub-poseidon-2024";
 
 function isIsoDateTime(value: string): boolean {
   if (typeof value !== "string") return false;

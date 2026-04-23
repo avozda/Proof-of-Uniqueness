@@ -182,15 +182,6 @@ export function formatIdentityRegistryTxError(err: Error): string {
   if (msg.includes("InvalidSignature")) {
     return ERROR_NAME_MESSAGES.InvalidSignature;
   }
-  if (msg.includes("InvalidPublicSignalLength")) {
-    return ERROR_NAME_MESSAGES.InvalidPublicSignalLength;
-  }
-  if (msg.includes("InvalidFieldElement")) {
-    return ERROR_NAME_MESSAGES.InvalidFieldElement;
-  }
-  if (msg.includes("InvalidOprfMetadata")) {
-    return ERROR_NAME_MESSAGES.InvalidOprfMetadata;
-  }
 
   if (
     /user rejected|user denied|denied transaction|rejected the request/i.test(

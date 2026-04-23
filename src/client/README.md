@@ -1,55 +1,60 @@
 # Client
 
-React + TypeScript frontend for:
+React + TypeScript frontend for the local Proof of Uniqueness flow.
 
-- VC generation
-- OPRF enrollment package generation/submission
+The app lets you:
 
-## Commands
+- generate a demo verifiable credential
+- build a VC + OPRF enrollment proof package in the browser
+- register the issuer on-chain
+- enroll or revoke an identity through `IdentityRegistry`
+
+## Run
 
 ```bash
 npm install
 npm run dev
-npm run build
 ```
 
-## Important Paths
+Open [http://localhost:5173](http://localhost:5173).
 
-- Contract ABI: `src/lib/contractAbi.ts`
-- Contract address config: `src/lib/wagmi.ts`
-- OPRF flow UI: `src/components/ZKProofSection.tsx`
-- OPRF package builder: `src/lib/oprfEnrollment.ts`
+Other useful commands:
 
-## Required Browser Assets
+```bash
+npm run build
+npm run lint
+npm run preview
+```
 
-The frontend expects these wasm assets in `public/`:
+## Local Requirements
+
+The current client is wired to local services only:
+
+- Anvil at `http://127.0.0.1:8545`
+- OPRF node 1 at `http://127.0.0.1:10000`
+- OPRF node 2 at `http://127.0.0.1:10001`
+- OPRF node 3 at `http://127.0.0.1:10002`
+- MetaMask or another injected wallet connected to the local chain
+
+The `IdentityRegistry` contract address is hardcoded in [src/lib/wagmi.ts](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/lib/wagmi.ts:1).
+
+## Required Assets
+
+These files must exist in `public/`:
 
 - `barretenberg.wasm`
 - `barretenberg-threads.wasm`
 - `acvm_js_bg.wasm`
 - `noirc_abi_wasm_bg.wasm`
+- `circuits/vc_blinded_query_auth_proof.json`
+- `circuits/vc_oprf_enrollment_proof.json`
 
-If missing or replaced by HTML (e.g. 404 fallback page), browser proving fails with a wasm magic-word error.
+If a WASM file is missing or served as HTML, browser-side proving will fail.
 
-## Current State
+## Main Files
 
-- This app emits a simplified, demo-oriented VC 2.0-like JSON structure (not a full interoperability profile).
-- Kept minimum VC shape checks: `@context`, `type` includes `VerifiableCredential`, `issuer.id`, `credentialSubject.id`, and ISO `validFrom`/`validUntil`.
-- Full production items like hosted custom JSON-LD contexts, `credentialStatus`, and `credentialSchema` are intentionally out of scope for this mock.
-- Old Circom/Groth16 and zk revocation UI paths are removed from the frontend.
-- The frontend submits `enroll(bytes,bytes32[],address,bytes)` after the connected wallet signs an EIP-712 enrollment authorization.
-- OPRF package generation is strict and live-only: no scaffold fallback path.
-- The app uses browser-side Noir + Barretenberg generation with `/circuits/vc_oprf_enrollment_proof.json`.
-- Revocation uses an EIP-712 wallet signature checked directly by `IdentityRegistry.revoke(uint256,uint256,bytes)`.
-- VC payload no longer includes `holderBindingSignature`; holder key possession is proven with live signatures during auth/proving.
-- OPRF transcript/auth is `vc-ownership` only.
-- UI no longer exposes manual package import, transcript input, network config inputs, or strict-mode toggles.
-- Contract address is configured from `src/lib/wagmi.ts` and not user-editable in the UI.
-
-## Local Devnet Note
-
-- For strict local end-to-end with on-chain verification, start Anvil with higher contract size limit:
-  `anvil --code-size-limit 50000`
-  (the generated Honk verifier is larger than the default EIP-170 24KB limit).
-
-No extra package build step is required.
+- App shell: [src/App.tsx](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/App.tsx:1)
+- Enrollment / revocation UI: [src/components/ZKProofSection.tsx](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/components/ZKProofSection.tsx:1)
+- OPRF proof builder: [src/lib/oprfEnrollment.ts](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/lib/oprfEnrollment.ts:1)
+- Contract ABI: [src/lib/contractAbi.ts](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/lib/contractAbi.ts:1)
+- Chain + contract config: [src/lib/wagmi.ts](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/lib/wagmi.ts:1)

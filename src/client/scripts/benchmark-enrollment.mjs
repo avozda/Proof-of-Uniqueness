@@ -164,6 +164,7 @@ function buildVcContext(eddsa, poseidon) {
     ],
     poseidon,
   );
+  const holderSig = signPoseidon(holderPrivateKey, hashId, eddsa);
 
   return {
     fieldValues,
@@ -171,6 +172,7 @@ function buildVcContext(eddsa, poseidon) {
     issuerPubKey,
     holderPubKey,
     issuerSig,
+    holderSig,
     hashId,
   };
 }
@@ -217,6 +219,8 @@ function buildEnrollmentInputs(ctx, transcript) {
     signer_pub_key: ctx.issuerPubKey.map((x) => x.toString()),
     signature_r8: ctx.issuerSig.R8.map((x) => x.toString()),
     signature_s: ctx.issuerSig.S.toString(),
+    holder_signature_r8: ctx.holderSig.R8.map((x) => x.toString()),
+    holder_signature_s: ctx.holderSig.S.toString(),
     beta: norm(transcript.beta),
     oprf_pk: { x: norm(transcript.oprfPk.x), y: norm(transcript.oprfPk.y) },
     dlog_e: norm(transcript.dlog.e),
