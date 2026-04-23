@@ -77,6 +77,19 @@ export const identityRegistryAbi = [
   },
   {
     type: "function",
+    name: "identitiesByNullifier",
+    inputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+    outputs: [
+      { name: "validUntil", type: "uint256", internalType: "uint256" },
+      { name: "issuerPubKeyX", type: "uint256", internalType: "uint256" },
+      { name: "issuerPubKeyY", type: "uint256", internalType: "uint256" },
+      { name: "walletAddress", type: "address", internalType: "address" },
+      { name: "exists", type: "bool", internalType: "bool" },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "getIdentity",
     inputs: [{ name: "nullifier", type: "uint256", internalType: "uint256" }],
     outputs: [

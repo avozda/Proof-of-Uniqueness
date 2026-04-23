@@ -1,12 +1,14 @@
 import { useState, useEffect } from "react";
-import { generateDID, toHex, initCrypto, publicKeyFromPrivateKey } from "./lib/did";
+import {
+  generateDID,
+  toHex,
+  initCrypto,
+  publicKeyFromPrivateKey,
+} from "./lib/did";
 import type { DIDKeyPair } from "./lib/did";
 import { createVerifiableCredential } from "./lib/vc";
 import type { VerifiableCredential, FormData } from "./lib/vc";
-import {
-  generateHolderKeyPair,
-  type HolderKeyPair,
-} from "./lib/holderKey";
+import { generateHolderKeyPair, type HolderKeyPair } from "./lib/holderKey";
 import { LoadingScreen } from "./components/LoadingScreen";
 import { DIDSection } from "./components/DIDSection";
 import { IdentityForm } from "./components/IdentityForm";
@@ -90,7 +92,9 @@ function App() {
   const [credential, setCredential] = useState<VerifiableCredential | null>(
     null,
   );
-  const [holderKeyPair, setHolderKeyPair] = useState<HolderKeyPair | null>(null);
+  const [holderKeyPair, setHolderKeyPair] = useState<HolderKeyPair | null>(
+    null,
+  );
   const [isGenerating, setIsGenerating] = useState(false);
   const [cryptoReady, setCryptoReady] = useState(false);
   const [issuerDID, setIssuerDID] = useState<DIDKeyPair | null>(null);
@@ -166,10 +170,8 @@ function App() {
         <div className="header-badge">
           <span>Proof of Uniqueness</span>
         </div>
-        <h1>Biometric Identity Credential</h1>
-        <p className="subtitle">
-          W3C Verifiable Credentials 2.0 with EdDSA Poseidon Signatures
-        </p>
+        <h1>Privacy-Preserving Identity Verification</h1>
+        <p className="subtitle">based on zk-SNARKs and TACEO:OPRF</p>
       </header>
 
       <DIDSection issuerDID={issuerDID} onRegenerate={handleRegenerateDID} />
@@ -198,10 +200,6 @@ function App() {
           </section>
         )}
       </main>
-
-      <footer className="footer">
-        <p>Built with EdDSA Poseidon signatures</p>
-      </footer>
     </div>
   );
 }

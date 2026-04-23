@@ -107,7 +107,13 @@ export interface OprfNetworkConfig {
   authModule: "vc-ownership";
 }
 
-type ProgressReporter = (message: string) => void;
+export interface ProgressEvent {
+  type: "start" | "complete";
+  step: string;
+  durationMs?: number;
+}
+
+type ProgressReporter = (event: ProgressEvent) => void;
 
 type OprfTranscriptInput = {
   beta: bigint;
@@ -240,6 +246,22 @@ async function loadVcBlindedQueryAuthCircuitArtifact(): Promise<CompiledCircuit>
     );
   }
   return (await res.json()) as CompiledCircuit;
+}
+
+async function withProgressStep<T>(
+  onProgress: ProgressReporter | undefined,
+  step: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  onProgress?.({ type: "start", step });
+  const startedAt = performance.now();
+  const result = await fn();
+  onProgress?.({
+    type: "complete",
+    step,
+    durationMs: performance.now() - startedAt,
+  });
+  return result;
 }
 
 function computeHashIdFromVc(vc: VerifiableCredential): bigint {
@@ -568,8 +590,11 @@ async function fetchLiveOprfTranscript(
   network: OprfNetworkConfig,
   onProgress?: ProgressReporter,
 ): Promise<OprfTranscriptInput> {
-  onProgress?.("Computing VC-derived private hash ID...");
-  const hashId = computeHashIdFromVc(vc);
+  const hashId = await withProgressStep(
+    onProgress,
+    "Compute VC-derived private hash ID",
+    async () => computeHashIdFromVc(vc),
+  );
   const services = network.nodeBases.map((base) =>
     toOprfUri(base, network.authModule),
   );
@@ -577,33 +602,40 @@ async function fetchLiveOprfTranscript(
   const blindedRequest = blindQuery(hashId, beta);
   const requestId = crypto.randomUUID();
 
-  onProgress?.("Building blinded-query auth proof witness...");
-  const vcCircuit = await loadVcBlindedQueryAuthCircuitArtifact();
-  const vcInputs = buildVcBlindedQueryAuthNoirInputs(
-    vc,
-    issuerPublicKey,
-    holderKeyPair,
-    requestId,
-    beta,
-    blindedRequest,
+  const { vcCircuit, vcInputs } = await withProgressStep(
+    onProgress,
+    "Build blinded-query auth proof witness",
+    async () => {
+      const circuit = await loadVcBlindedQueryAuthCircuitArtifact();
+      const inputs = buildVcBlindedQueryAuthNoirInputs(
+        vc,
+        issuerPublicKey,
+        holderKeyPair,
+        requestId,
+        beta,
+        blindedRequest,
+      );
+      return { vcCircuit: circuit, vcInputs: inputs };
+    },
   );
 
-  const authPayload = await (async () => {
-    // Nodes require a proof-backed auth payload before they will process the blinded query.
-    onProgress?.(
-      "Generating blinded-query auth proof for node authentication...",
-    );
-    const vcProofData = await generateWithNoir(vcCircuit, vcInputs);
-    const publicInputsBytes = publicInputsToBytes(
-      vcProofData.publicInputs,
-      "le",
-    );
-    return {
-      api_key: network.apiKey,
-      public_inputs: Array.from(publicInputsBytes),
-      proof: Array.from(vcProofData.proof),
-    };
-  })();
+  const authPayload = await withProgressStep(
+    onProgress,
+    "Generate blinded-query auth proof",
+    async () => {
+      // Nodes require a proof-backed auth payload before they will process the blinded query.
+      const vcProofData = await generateWithNoir(vcCircuit, vcInputs);
+      const publicInputsBytes = publicInputsToBytes(
+        vcProofData.publicInputs,
+        "le",
+      );
+      return {
+        api_key: network.apiKey,
+        public_inputs: Array.from(publicInputsBytes),
+        proof: Array.from(vcProofData.proof),
+      };
+    },
+  );
 
   const wrapOprfNodeErrors = (phase: string, err: unknown): never => {
     if (Array.isArray(err) && err.every((x) => isNodeError(x))) {
@@ -624,17 +656,27 @@ async function fetchLiveOprfTranscript(
     throw err instanceof Error ? err : new Error(String(err));
   };
 
-  onProgress?.("Opening OPRF sessions with nodes...");
-  const sessions = await initSessions(services, network.threshold, {
-    request_id: requestId,
-    blinded_query: blindedRequest,
-    auth: authPayload,
-  }).catch((err) => wrapOprfNodeErrors("session init", err));
+  const sessions = await withProgressStep(
+    onProgress,
+    "Open OPRF sessions with nodes",
+    async () =>
+      initSessions(services, network.threshold, {
+        request_id: requestId,
+        blinded_query: blindedRequest,
+        auth: authPayload,
+      }).catch((err) => wrapOprfNodeErrors("session init", err)),
+  );
 
-  onProgress?.("Collecting threshold OPRF responses...");
-  const challenge = generateChallengeRequest(sessions);
-  const proofShares = await finishSessions(sessions, challenge).catch((err) =>
-    wrapOprfNodeErrors("session finish", err),
+  const { challenge, proofShares } = await withProgressStep(
+    onProgress,
+    "Collect threshold OPRF responses",
+    async () => {
+      const nextChallenge = generateChallengeRequest(sessions);
+      const nextProofShares = await finishSessions(sessions, nextChallenge).catch(
+        (err) => wrapOprfNodeErrors("session finish", err),
+      );
+      return { challenge: nextChallenge, proofShares: nextProofShares };
+    },
   );
   // Collapse threshold shares into one transcript we can verify locally and feed into Noir.
   const dlogProof = verifyDlogEquality(
@@ -722,9 +764,9 @@ export async function buildVcOprfEnrollmentProofPackage(
   network: OprfNetworkConfig,
   onProgress?: ProgressReporter,
 ): Promise<VcOprfEnrollmentProofPackage> {
-  onProgress?.("Validating OPRF configuration...");
-  await validateOprfNetworkConfig(network);
-  onProgress?.("Fetching live OPRF transcript...");
+  await withProgressStep(onProgress, "Validate OPRF configuration", async () =>
+    validateOprfNetworkConfig(network),
+  );
   const transcript = await fetchLiveOprfTranscript(
     credential,
     issuerPublicKey,
@@ -733,27 +775,31 @@ export async function buildVcOprfEnrollmentProofPackage(
     onProgress,
   );
   try {
-    onProgress?.("Building enrollment witness and generating proof...");
-    const circuit = await loadCircuitArtifact();
-    assertCircuitCompatibility(circuit);
-    const noirInputs = buildNoirInputs(
-      credential,
-      issuerPublicKey,
-      holderKeyPair,
-      transcript,
-    );
+    const proofData = await withProgressStep(
+      onProgress,
+      "Build enrollment witness and generate proof",
+      async () => {
+        const circuit = await loadCircuitArtifact();
+        assertCircuitCompatibility(circuit);
+        const noirInputs = buildNoirInputs(
+          credential,
+          issuerPublicKey,
+          holderKeyPair,
+          transcript,
+        );
 
-    const proofData = await generateWithNoir(circuit, noirInputs);
+        return generateWithNoir(circuit, noirInputs);
+      },
+    );
 
     const publicSignalsBig = proofData.publicInputs.map((x) =>
       normalizeField(BigInt(x)),
     );
-    onProgress?.("Finalizing proof package...");
-    return {
+    return withProgressStep(onProgress, "Finalize proof package", async () => ({
       proof: toHex(proofData.proof),
       publicSignals: publicSignalsBig.map(toBytes32Hex),
       decoded: decodeFromPublicSignals(publicSignalsBig),
-    };
+    }));
   } catch (err) {
     if (err instanceof Error) {
       throw new Error(`OPRF package generation failed: ${err.message}`);
