@@ -1,105 +1,10 @@
-# Smart Contract Gas Profiling Experiment (Noir + OPRF Stack)
+# Gas Profiling Notes
 
-## Objective
+This repo still uses an on-chain verifier for enrollment, so enrollment gas is mostly driven by proof verification.
 
-This experiment measured the previous `IdentityRegistry.sol` implementation. The current contract keeps Noir/Ultra verification for enrollment and uses EIP-712 wallet signatures for revocation.
+Revocation is much simpler now: it is a wallet signature check plus a record delete.
 
-The gas numbers below should be refreshed after the wallet-signed revocation migration.
-
-## Methodology
-
-### 1) Tooling and Environment
-
-- Framework: **Foundry**
-- Compiler: `solc 0.8.33`
-- Main command: `forge test --gas-report`
-- Additional commands:
-  - `forge test --match-test testEnrollmentScaling -vv`
-  - `forge build --sizes`
-
-### 2) Test Contracts and Scenarios
-
-- `src/smart-contracts/test/IdentityRegistryGas.t.sol`
-  - Uses `MockUltraVerifier` to isolate enrollment verifier logic.
-  - Covers success and revert paths for:
-    - `enroll(...)`
-    - `revoke(...)`
-    - issuer trust management
-    - trusted OPRF public-key rotation
-- `src/smart-contracts/test/IdentityRegistryScaling.t.sol`
-  - Enrolls 1,000 sequential nullifiers and logs gas for enrollments `#1`, `#100`, and `#1000`.
-- `src/smart-contracts/test/IdentityRegistryE2E.t.sol`
-  - Exercises paths that include generated Ultra verifier contracts, providing a reality check for full end-to-end cost.
-
-### 3) Public Signal Model Used
-
-The measured enrollment path uses the current canonical 10-signal layout:
-
-1. `oprfPkX`
-2. `oprfPkY`
-3. `validUntil`
-4. `holderPubKeyX`
-5. `holderPubKeyY`
-6. `issuerPubKeyX`
-7. `issuerPubKeyY`
-8. `oprfKeyId`
-9. `oprfEpoch`
-10. `nullifier`
-
-## Results
-
-### A) Gas Report (Current Contract)
-
-
-| Metric                                | Measured Value           | Source / Notes                               |
-| ------------------------------------- | ------------------------ | -------------------------------------------- |
-| `IdentityRegistry` **deployment**     | **1,510,960 gas**        | `forge test --gas-report`                    |
-| `addTrustedIssuer`                    | **47,414 gas (avg)**     | Owner operation                              |
-| `enroll` (global average)             | **243,245 gas (avg)**    | Mixed call set (success + revert paths)      |
-| `enroll` min / max                    | **25,790 / 265,128 gas** | Mixed reverting/success paths in test corpus |
-| `revoke` (previous zk path average)   | **42,168 gas (avg)**     | Obsolete after wallet-signature migration    |
-| `revoke` previous min / max           | **25,710 / 58,928 gas**  | Obsolete after wallet-signature migration    |
-| `setTrustedOprfPublicKey`             | **29,868 gas (avg)**     | OPRF trust anchor update                     |
-| `removeTrustedIssuer`                 | **25,416 gas (avg)**     | Owner operation                              |
-| `purgeInvalidRecords`                 | **53,166 gas (avg)**     | Permissionless maintenance path              |
-| `purgeInvalidRecords` min / max       | **37,588 / 67,815 gas**  | Depends on scan span and deletions           |
-
-
-### B) Scaling Benchmark (`IdentityRegistryScaling.t.sol`)
-
-Logged values from `forge test --match-test testEnrollmentScaling -vv`:
-
-- **Enrollment #1:** `245,707` gas
-- **Enrollment #100:** `210,760` gas
-- **Enrollment #1000:** `210,760` gas
-
-This confirms stable steady-state enrollment cost and supports the expected constant-time behavior of mapping-based deduplication.
-
-### C) Verifier-Inclusive Reality Check (E2E)
-
-The storage/policy gas above isolates registry logic using mocks. End-to-end tests that include generated Ultra verifier contracts show million-gas order in the test harness, for example:
-
-- `testE2E_RealUltraVerifier_RejectsMalformedProof()`: **5,604,895 gas**
-
-This demonstrates that proof verification dominates full enrollment economics on L1.
-
-### D) Contract Size Measurements
-
-From `forge build --sizes`:
-
-- `IdentityRegistry` runtime size: **6,345 bytes**
-- `UltraVerifier (VcOprfEnrollmentUltraVerifier.sol)` runtime size: **16,906 bytes**
-- Previous `UltraVerifier (VcRevocationUltraVerifier.sol)` runtime size: **11,052 bytes**; removed by the wallet-signature revocation migration.
-
-The repository keeps `code_size_limit = 50000` in Foundry config to avoid local deployment issues when verifier-heavy contracts are used in dev/test workflows.
-
-## Interpretation
-
-1. **Registry logic is efficient and predictable**: mapping-based duplicate checks and state writes remain stable at scale.
-2. **Economic bottleneck is verifier execution**: full-path on-chain proof verification, not storage lookup, is the dominant cost driver.
-3. **Operational controls remain modest**: issuer and OPRF key management calls are comparatively inexpensive, while permissionless purge offers bounded maintenance cost.
-
-## Reproducibility
+## Commands
 
 Run from `src/smart-contracts`:
 
@@ -108,3 +13,45 @@ forge test --gas-report
 forge test --match-test testEnrollmentScaling -vv
 forge build --sizes
 ```
+
+## What to look at
+
+- `enroll(...)`
+  - includes proof verification,
+  - trusted OPRF public-key check,
+  - issuer trust check,
+  - expiry check,
+  - duplicate nullifier check,
+  - wallet authorization check,
+  - storage write.
+
+- `revoke(...)`
+  - looks up the identity by nullifier,
+  - checks the EIP-712 revocation signature,
+  - deletes the stored record.
+
+- admin operations
+  - `addTrustedIssuer`
+  - `removeTrustedIssuer`
+  - `setTrustedOprfPublicKey`
+
+## Current enrollment public signals
+
+The contract expects exactly 6 public signals from `vc_oprf_enrollment_proof`:
+
+1. `oprfPkX`
+2. `oprfPkY`
+3. `validUntil`
+4. `issuerPubKeyX`
+5. `issuerPubKeyY`
+6. `nullifier`
+
+## Practical takeaway
+
+- Enrollment is the expensive path.
+- Revocation should be much cheaper than enrollment because it no longer verifies a zk proof.
+- Contract size is still affected by the generated verifier contract, not just the registry itself.
+
+## Refreshing measurements
+
+This file is intentionally lightweight. If you need fresh numbers, rerun the commands above and treat those outputs as canonical.
