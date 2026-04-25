@@ -41,6 +41,7 @@ const BB_BACKEND_OPTIONS = {
   threads: 1,
   memory: { initial: 4096, maximum: 65536 },
 };
+const BENCH_WALLET_ADDRESS = 0x1234567890abcdef1234567890abcdef12345678n;
 
 function bytesToField(bytes) {
   let v = 0n;
@@ -164,7 +165,15 @@ function buildVcContext(eddsa, poseidon) {
     ],
     poseidon,
   );
-  const holderSig = signPoseidon(holderPrivateKey, hashId, eddsa);
+  const holderAuthorizationMessage = hashN(
+    [hashId, BENCH_WALLET_ADDRESS],
+    poseidon,
+  );
+  const holderSig = signPoseidon(
+    holderPrivateKey,
+    holderAuthorizationMessage,
+    eddsa,
+  );
 
   return {
     fieldValues,
@@ -236,6 +245,7 @@ function buildEnrollmentInputs(ctx, transcript) {
     valid_until: ctx.fieldValues[10].toString(),
     issuer_pub_key_x: ctx.issuerPubKey[0].toString(),
     issuer_pub_key_y: ctx.issuerPubKey[1].toString(),
+    wallet_address: BENCH_WALLET_ADDRESS.toString(),
   };
 }
 

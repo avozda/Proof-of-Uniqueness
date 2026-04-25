@@ -44,39 +44,40 @@ contract IdentityRegistryScalingTest is Test {
 
     function testEnrollmentScaling() public {
         bytes memory proof = hex"01";
-        bytes32[] memory signals = new bytes32[](6);
+        bytes32[] memory signals = new bytes32[](7);
 
         signals[0] = bytes32(OPRF_PK_X);
         signals[1] = bytes32(OPRF_PK_Y);
         signals[2] = bytes32(block.timestamp + 1000);
         signals[3] = bytes32(ISSUER_X);
         signals[4] = bytes32(ISSUER_Y);
+        signals[5] = bytes32(uint256(uint160(walletAddress)));
 
         console.log("Measuring gas cost for sequential enrollments:");
 
-        signals[5] = bytes32(uint256(1));
+        signals[6] = bytes32(uint256(1));
         uint256 gasStart = gasleft();
         _enroll(proof, signals);
         uint256 gasUsed1 = gasStart - gasleft();
         console.log("Enrollment #1:", gasUsed1);
 
         for (uint256 i = 2; i < 100; i++) {
-            signals[5] = bytes32(i);
+            signals[6] = bytes32(i);
             _enroll(proof, signals);
         }
 
-        signals[5] = bytes32(uint256(100));
+        signals[6] = bytes32(uint256(100));
         gasStart = gasleft();
         _enroll(proof, signals);
         uint256 gasUsed100 = gasStart - gasleft();
         console.log("Enrollment #100:", gasUsed100);
 
         for (uint256 i = 101; i < 1000; i++) {
-            signals[5] = bytes32(i);
+            signals[6] = bytes32(i);
             _enroll(proof, signals);
         }
 
-        signals[5] = bytes32(uint256(1000));
+        signals[6] = bytes32(uint256(1000));
         gasStart = gasleft();
         _enroll(proof, signals);
         uint256 gasUsed1000 = gasStart - gasleft();

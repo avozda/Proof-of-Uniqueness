@@ -229,6 +229,12 @@ export function ZKProofSection({
   }, [generationStepStartedAt, isGenerating]);
 
   const handleGenerateProof = async () => {
+    if (!address) {
+      setProofError(
+        "Connect the wallet first. The enrollment proof now binds to the selected wallet address.",
+      );
+      return;
+    }
     setIsGenerating(true);
     setProofError(null);
     setGenerationStatus("Preparing VC and OPRF request...");
@@ -259,6 +265,7 @@ export function ZKProofSection({
         credential,
         issuerPublicKey,
         holderKeyPair,
+        address,
         networkConfig,
         handleProgress,
       );
@@ -340,6 +347,12 @@ export function ZKProofSection({
     if (enrollPhaseActive) return;
     if (!contractAddressValid || !contractHasCode) {
       setProofError("IdentityRegistry address is not configured correctly.");
+      return;
+    }
+    if (BigInt(proofPackage.decoded.walletAddress) !== BigInt(address)) {
+      setProofError(
+        "Connected wallet does not match the wallet address bound into the proof. Regenerate the package with the active wallet.",
+      );
       return;
     }
 
@@ -640,6 +653,14 @@ export function ZKProofSection({
               <div className="output-item">
                 <span className="output-label">Nullifier</span>
                 <code>{proofPackage.decoded.nullifier}</code>
+              </div>
+              <div className="output-item">
+                <span className="output-label">Wallet Address</span>
+                <code>
+                  {`0x${BigInt(proofPackage.decoded.walletAddress)
+                    .toString(16)
+                    .padStart(40, "0")}`}
+                </code>
               </div>
             </div>
           </div>

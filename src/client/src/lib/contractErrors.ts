@@ -33,6 +33,8 @@ const ERROR_NAME_MESSAGES: Record<string, string> = {
   UntrustedOprfPublicKey:
     "Proof uses an OPRF public key that is not trusted by this contract.",
   InvalidWalletAddress: REVERT_SELECTOR_MESSAGES["0xa5f90a11"],
+  InvalidWalletBinding:
+    "Connected wallet does not match the wallet address bound into the proof.",
   InvalidEnrollmentAuthorization: REVERT_SELECTOR_MESSAGES["0xdef8823b"],
   InvalidRevocationSignature: REVERT_SELECTOR_MESSAGES["0xa9615b40"],
   RevocationSignatureExpired: REVERT_SELECTOR_MESSAGES["0x41888f68"],
@@ -169,6 +171,9 @@ export function formatIdentityRegistryTxError(err: Error): string {
   }
   if (msg.includes("InvalidWalletAddress")) {
     return ERROR_NAME_MESSAGES.InvalidWalletAddress;
+  }
+  if (msg.includes("InvalidWalletBinding")) {
+    return ERROR_NAME_MESSAGES.InvalidWalletBinding;
   }
   if (msg.includes("InvalidEnrollmentAuthorization")) {
     return ERROR_NAME_MESSAGES.InvalidEnrollmentAuthorization;

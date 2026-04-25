@@ -96,6 +96,7 @@ export interface VcOprfEnrollmentProofPackage {
     validUntil: string;
     issuerPubKeyX: string;
     issuerPubKeyY: string;
+    walletAddress: string;
     nullifier: string;
   };
 }
@@ -284,6 +285,7 @@ function buildNoirInputs(
   vc: VerifiableCredential,
   issuerPublicKey: { x: bigint; y: bigint },
   holderKeyPair: HolderKeyPair,
+  walletAddress: `0x${string}`,
   transcript: OprfTranscriptInput,
 ) {
   const fieldValues = buildFieldValuesOrdered(vc);
@@ -309,7 +311,14 @@ function buildNoirInputs(
   }
 
   const hashId = computeHashIdFromVc(vc);
-  const holderSig = signMessageWithHolderKey(holderKeyPair.privateKey, hashId);
+  const walletAddressField = normalizeField(BigInt(walletAddress));
+  const holderAuthorizationMessage = normalizeField(
+    poseidonHash([hashId, walletAddressField]),
+  );
+  const holderSig = signMessageWithHolderKey(
+    holderKeyPair.privateKey,
+    holderAuthorizationMessage,
+  );
 
   return {
     merkle_leaves: merkleLeaves.map((x) => x.toString()),
@@ -337,6 +346,7 @@ function buildNoirInputs(
     valid_until: fieldValues[10].toString(),
     issuer_pub_key_x: issuerPublicKey.x.toString(),
     issuer_pub_key_y: issuerPublicKey.y.toString(),
+    wallet_address: walletAddressField.toString(),
   };
 }
 
@@ -743,8 +753,8 @@ async function validateOprfNetworkConfig(
 }
 
 function decodeFromPublicSignals(signals: bigint[]) {
-  if (signals.length !== 6) {
-    throw new Error(`Expected 6 public signals, got ${signals.length}`);
+  if (signals.length !== 7) {
+    throw new Error(`Expected 7 public signals, got ${signals.length}`);
   }
   // Mirror the public signal layout emitted by vc_oprf_enrollment_proof.
   return {
@@ -753,7 +763,8 @@ function decodeFromPublicSignals(signals: bigint[]) {
     validUntil: signals[2].toString(),
     issuerPubKeyX: signals[3].toString(),
     issuerPubKeyY: signals[4].toString(),
-    nullifier: signals[5].toString(),
+    walletAddress: signals[5].toString(),
+    nullifier: signals[6].toString(),
   };
 }
 
@@ -761,6 +772,7 @@ export async function buildVcOprfEnrollmentProofPackage(
   credential: VerifiableCredential,
   issuerPublicKey: { x: bigint; y: bigint },
   holderKeyPair: HolderKeyPair,
+  walletAddress: `0x${string}`,
   network: OprfNetworkConfig,
   onProgress?: ProgressReporter,
 ): Promise<VcOprfEnrollmentProofPackage> {
@@ -785,6 +797,7 @@ export async function buildVcOprfEnrollmentProofPackage(
           credential,
           issuerPublicKey,
           holderKeyPair,
+          walletAddress,
           transcript,
         );
 

@@ -260,6 +260,7 @@ export const identityRegistryAbi = [
   { type: "error", name: "InvalidProof", inputs: [] },
   { type: "error", name: "InvalidPublicSignalLength", inputs: [] },
   { type: "error", name: "InvalidWalletAddress", inputs: [] },
+  { type: "error", name: "InvalidWalletBinding", inputs: [] },
   { type: "error", name: "InvalidEnrollmentAuthorization", inputs: [] },
   { type: "error", name: "InvalidRevocationSignature", inputs: [] },
   { type: "error", name: "RevocationSignatureExpired", inputs: [] },

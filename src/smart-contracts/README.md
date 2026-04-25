@@ -58,19 +58,20 @@ If your terminal is non-interactive and prompts still fail, add:
 ## IdentityRegistry behavior
 
 - **Constructor**: takes the Ultra enrollment verifier address and the initial trusted OPRF public key `(oprfPkX, oprfPkY)` (non-zero, in-circuit field range).
-- **Enrollment public signals** (length 6, each value `< SNARK_SCALAR_FIELD`):
+- **Enrollment public signals** (length 7, each value `< SNARK_SCALAR_FIELD`):
   1. `oprfPkX`
   2. `oprfPkY`
   3. `validUntil`
   4. `issuerPubKeyX`
   5. `issuerPubKeyY`
-  6. `nullifier` (proof return value; must be non-zero on-chain)
+  6. `walletAddress`
+  7. `nullifier` (proof return value; must be non-zero on-chain)
 - **Trusted OPRF key**: `oprfPkX` / `oprfPkY` in the signals must match `trustedOprfPkX` / `trustedOprfPkY`. Owners can rotate with `setTrustedOprfPublicKey(pkX, pkY)`.
 - **Trusted issuers**: `keccak256(abi.encodePacked(issuerPubKeyX, issuerPubKeyY))`. `addTrustedIssuer` rejects `(0, 0)`.
-- **Wallet binding**: `enroll` stores `walletAddress`. The same address must provide an **EIP-712** signature (`signTypedData` / EIP-712 v4) over the `Enroll` struct:
+- **Wallet binding**: `enroll` stores `walletAddress`. The same address must now appear in the proof public signals and must provide an **EIP-712** signature (`signTypedData` / EIP-712 v4) over the `Enroll` struct:
   - `nullifier`, `publicSignalsHash` (`keccak256` of the packed `bytes32[]` public signals), `proofHash` (`keccak256` of proof bytes), `walletAddress`
   - Domain: `name` `"IdentityRegistry"`, `version` `"1"`, `chainId`, `verifyingContract` = this registry  
-  On-chain, `hashEnrollmentAuthorization` returns the final digest; `domainSeparator()` matches that domain. Signature verification runs before the ZK verifier call (cheap failure on bad signatures).
+  On-chain, `hashEnrollmentAuthorization` returns the final digest; `domainSeparator()` matches that domain. Signature verification runs before the ZK verifier call, then the registry checks that the proof-bundled `walletAddress` matches the transaction payload.
 - **Revocation**: `revoke(nullifier, deadline, signature)` — EIP-712 `Revoke` over `nullifier` and `deadline` with the same domain; signer must be the stored `walletAddress`. `hashRevocationAuthorization` returns the digest to sign.
 - **Purge**: `purgeInvalidRecords()` scans the full historical nullifier list once per call and deletes records that are expired or whose issuer is no longer trusted.
 - **Hardening**: signal length and field-range checks, verifier `try/catch`, low-**s** signature checks.

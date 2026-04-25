@@ -56,17 +56,18 @@ The enrollment circuit proves:
 
 - the VC fields are internally consistent,
 - the issuer signature is valid,
-- the holder key signed the private `hash_id`,
+- the holder key signed `Poseidon(hash_id, wallet_address)`,
 - the OPRF transcript is valid for that same private `hash_id`.
 
-The enrollment proof exposes six public signals:
+The enrollment proof exposes seven public signals:
 
 1. `oprfPkX`
 2. `oprfPkY`
 3. `validUntil`
 4. `issuerPubKeyX`
 5. `issuerPubKeyY`
-6. `nullifier`
+6. `walletAddress`
+7. `nullifier`
 
 Primary file:
 
@@ -82,9 +83,10 @@ enroll(proof, publicSignals, walletAddress, enrollmentSignature)
 
 The contract checks:
 
-- public signal length is exactly 6,
+- public signal length is exactly 7,
 - each public signal is inside the SNARK field,
 - the proof is tied to the currently trusted OPRF public key,
+- the `walletAddress` in the proof matches the `walletAddress` in the call,
 - the wallet signed the exact enrollment payload,
 - the proof verifies,
 - the nullifier is new,
@@ -136,6 +138,7 @@ Public in the enrollment proof:
 - trusted OPRF public key,
 - expiry,
 - issuer public key,
+- bound wallet address,
 - nullifier
 
 Public on-chain:

@@ -18,18 +18,19 @@ contract IdentityRegistryE2ETest is Test {
     uint256 internal constant OPRF_PK_Y = 222;
     uint256 internal constant REVOCATION_PRIVATE_KEY = 0xA11CE;
 
-    function _signals(uint256 nullifier, uint256 validUntil, uint256 issuerX, uint256 issuerY)
+    function _signals(uint256 nullifier, uint256 validUntil, uint256 issuerX, uint256 issuerY, address walletAddress)
         internal
         pure
         returns (bytes32[] memory s)
     {
-        s = new bytes32[](6);
+        s = new bytes32[](7);
         s[0] = bytes32(OPRF_PK_X);
         s[1] = bytes32(OPRF_PK_Y);
         s[2] = bytes32(validUntil);
         s[3] = bytes32(issuerX);
         s[4] = bytes32(issuerY);
-        s[5] = bytes32(nullifier);
+        s[5] = bytes32(uint256(uint160(walletAddress)));
+        s[6] = bytes32(nullifier);
     }
 
     function _walletAddress() internal view returns (address) {
@@ -56,7 +57,7 @@ contract IdentityRegistryE2ETest is Test {
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
 
         bytes memory proof = hex"01";
-        bytes32[] memory signals = _signals(777, block.timestamp + 3600, ISSUER_X, ISSUER_Y);
+        bytes32[] memory signals = _signals(777, block.timestamp + 3600, ISSUER_X, ISSUER_Y, _walletAddress());
 
         _enroll(registry, proof, signals, _walletAddress());
 
@@ -77,7 +78,7 @@ contract IdentityRegistryE2ETest is Test {
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
 
         bytes memory malformedProof = hex"deadbeef";
-        bytes32[] memory signals = _signals(888, block.timestamp + 3600, ISSUER_X, ISSUER_Y);
+        bytes32[] memory signals = _signals(888, block.timestamp + 3600, ISSUER_X, ISSUER_Y, _walletAddress());
         bytes memory signature = _sign(
             REVOCATION_PRIVATE_KEY,
             registry.hashEnrollmentAuthorization(malformedProof, signals, _walletAddress())
@@ -94,7 +95,7 @@ contract IdentityRegistryE2ETest is Test {
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
 
         bytes memory proof = hex"01";
-        bytes32[] memory signals = _signals(999, block.timestamp + 3600, ISSUER_X, ISSUER_Y);
+        bytes32[] memory signals = _signals(999, block.timestamp + 3600, ISSUER_X, ISSUER_Y, _walletAddress());
         signals[0] = bytes32(uint256(OPRF_PK_X + 1));
 
         vm.expectRevert(IdentityRegistry.UntrustedOprfPublicKey.selector);
@@ -106,7 +107,12 @@ contract IdentityRegistryE2ETest is Test {
         IdentityRegistry registry = new IdentityRegistry(address(mockVerifier), OPRF_PK_X, OPRF_PK_Y);
 
         registry.addTrustedIssuer(ISSUER_X, ISSUER_Y);
-        _enroll(registry, hex"01", _signals(777, block.timestamp + 3600, ISSUER_X, ISSUER_Y), _walletAddress());
+        _enroll(
+            registry,
+            hex"01",
+            _signals(777, block.timestamp + 3600, ISSUER_X, ISSUER_Y, _walletAddress()),
+            _walletAddress()
+        );
 
         uint256 deadline = block.timestamp + 1 hours;
         bytes memory signature = _sign(REVOCATION_PRIVATE_KEY, registry.hashRevocationAuthorization(777, deadline));

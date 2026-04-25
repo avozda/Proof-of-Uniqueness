@@ -31,6 +31,7 @@ contract IdentityRegistry {
         uint256 validUntil;
         uint256 issuerPubKeyX;
         uint256 issuerPubKeyY;
+        address walletAddress;
         uint256 nullifier;
     }
 
@@ -40,14 +41,16 @@ contract IdentityRegistry {
     // 2: validUntil
     // 3: issuerPubKeyX
     // 4: issuerPubKeyY
-    // 5: nullifier (proof return value)
+    // 5: walletAddress
+    // 6: nullifier (proof return value)
     uint256 private constant SIGNAL_OPRF_PK_X = 0;
     uint256 private constant SIGNAL_OPRF_PK_Y = 1;
     uint256 private constant SIGNAL_VALID_UNTIL = 2;
     uint256 private constant SIGNAL_ISSUER_PUBKEY_X = 3;
     uint256 private constant SIGNAL_ISSUER_PUBKEY_Y = 4;
-    uint256 private constant SIGNAL_NULLIFIER = 5;
-    uint256 private constant PUBLIC_SIGNALS_LENGTH = 6;
+    uint256 private constant SIGNAL_WALLET_ADDRESS = 5;
+    uint256 private constant SIGNAL_NULLIFIER = 6;
+    uint256 private constant PUBLIC_SIGNALS_LENGTH = 7;
 
     IVcOprfEnrollmentVerifier public immutable enrollmentVerifier;
     uint256 public trustedOprfPkX;
@@ -92,6 +95,7 @@ contract IdentityRegistry {
     error UntrustedOprfPublicKey();
     error InvalidWalletAddress();
     error InvalidEnrollmentAuthorization();
+    error InvalidWalletBinding();
     error InvalidRevocationSignature();
     error RevocationSignatureExpired();
     error InvalidSignature();
@@ -160,6 +164,7 @@ contract IdentityRegistry {
 
         EnrollmentSignals memory s = _parseEnrollmentSignals(publicSignals);
         if (s.nullifier != nullifier) revert InvalidProof();
+        if (s.walletAddress != walletAddress) revert InvalidWalletBinding();
 
         if (identitiesByNullifier[s.nullifier].exists) revert IdentityAlreadyExists();
         if (block.timestamp > s.validUntil) revert IdentityExpired();
@@ -171,7 +176,7 @@ contract IdentityRegistry {
             validUntil: s.validUntil,
             issuerPubKeyX: s.issuerPubKeyX,
             issuerPubKeyY: s.issuerPubKeyY,
-            walletAddress: walletAddress,
+            walletAddress: s.walletAddress,
             exists: true
         });
 
@@ -181,7 +186,7 @@ contract IdentityRegistry {
             s.nullifier,
             issuerPubKeyHash,
             s.validUntil,
-            walletAddress,
+            s.walletAddress,
             s.oprfPkX,
             s.oprfPkY
         );
@@ -339,6 +344,7 @@ contract IdentityRegistry {
         s.validUntil = uint256(publicSignals[SIGNAL_VALID_UNTIL]);
         s.issuerPubKeyX = uint256(publicSignals[SIGNAL_ISSUER_PUBKEY_X]);
         s.issuerPubKeyY = uint256(publicSignals[SIGNAL_ISSUER_PUBKEY_Y]);
+        s.walletAddress = address(uint160(uint256(publicSignals[SIGNAL_WALLET_ADDRESS])));
         s.nullifier = uint256(publicSignals[SIGNAL_NULLIFIER]);
     }
 

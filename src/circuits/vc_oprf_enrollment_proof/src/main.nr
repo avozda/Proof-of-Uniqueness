@@ -95,6 +95,10 @@ fn compute_hash_id(
     ])
 }
 
+fn compute_holder_authorization_message(hash_id: Field, wallet_address: Field) -> Field {
+    hash_n([hash_id, wallet_address])
+}
+
 fn main(
     // VC proof inputs
     merkle_leaves: [Field; 16],
@@ -115,6 +119,7 @@ fn main(
     valid_until: pub Field,
     issuer_pub_key_x: pub Field,
     issuer_pub_key_y: pub Field,
+    wallet_address: pub Field,
 ) -> pub Field {
     // These labels must stay in the same order as the VC field encoder outside the circuit.
     // Each checked Merkle leaf is Poseidon(label, value).
@@ -156,14 +161,15 @@ fn main(
     let hash_id = compute_hash_id(
         field_values,
     );
-    // The holder key embedded in the VC must also authorize this private hash_id.
+    let holder_authorization_message = compute_holder_authorization_message(hash_id, wallet_address);
+    // The holder key embedded in the VC must authorize the private hash_id for this exact wallet.
     let holder_valid = eddsa_verify_poseidon(
         field_values[0],
         field_values[1],
         holder_signature_s,
         holder_signature_r8[0],
         holder_signature_r8[1],
-        hash_id,
+        holder_authorization_message,
     );
     assert(holder_valid);
 

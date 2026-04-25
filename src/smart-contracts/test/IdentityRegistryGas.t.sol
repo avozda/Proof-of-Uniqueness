@@ -41,13 +41,14 @@ contract IdentityRegistryGasTest is Test {
     }
 
     function _signals(uint256 nullifier) internal view returns (bytes32[] memory signals) {
-        signals = new bytes32[](6);
+        signals = new bytes32[](7);
         signals[0] = bytes32(OPRF_PK_X); // oprfPkX
         signals[1] = bytes32(OPRF_PK_Y); // oprfPkY
         signals[2] = bytes32(block.timestamp + 1000); // validUntil
         signals[3] = bytes32(ISSUER_X); // issuerPubKeyX
         signals[4] = bytes32(ISSUER_Y); // issuerPubKeyY
-        signals[5] = bytes32(nullifier); // nullifier
+        signals[5] = bytes32(uint256(uint160(walletAddress))); // walletAddress
+        signals[6] = bytes32(nullifier); // nullifier
     }
 
     function _sign(uint256 privateKey, bytes32 digest) internal view returns (bytes memory signature) {
@@ -96,7 +97,7 @@ contract IdentityRegistryGasTest is Test {
 
     function testRevertInvalidSignalLength() public {
         bytes memory proof = hex"01";
-        bytes32[] memory signals = new bytes32[](5);
+        bytes32[] memory signals = new bytes32[](6);
         vm.expectRevert(IdentityRegistry.InvalidPublicSignalLength.selector);
         registry.enroll(proof, signals, walletAddress, hex"01");
     }
@@ -172,6 +173,17 @@ contract IdentityRegistryGasTest is Test {
             _sign(REVOCATION_PRIVATE_KEY + 1, registry.hashEnrollmentAuthorization(proof, signals, walletAddress));
         vm.expectRevert(IdentityRegistry.InvalidEnrollmentAuthorization.selector);
         registry.enroll(proof, signals, walletAddress, signature);
+    }
+
+    function testRevertWalletBindingMismatch() public {
+        bytes memory proof = hex"01";
+        bytes32[] memory signals = _signals(777);
+        uint256 otherPrivateKey = REVOCATION_PRIVATE_KEY + 1;
+        address otherWallet = vm.addr(REVOCATION_PRIVATE_KEY + 1);
+        bytes memory signature =
+            _sign(otherPrivateKey, registry.hashEnrollmentAuthorization(proof, signals, otherWallet));
+        vm.expectRevert(IdentityRegistry.InvalidWalletBinding.selector);
+        registry.enroll(proof, signals, otherWallet, signature);
     }
 
     function testOwnerCanRotateTrustedOprfPublicKey() public {
