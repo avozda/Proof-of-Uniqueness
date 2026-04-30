@@ -73,7 +73,7 @@ If your terminal is non-interactive and prompts still fail, add:
   - Domain: `name` `"IdentityRegistry"`, `version` `"1"`, `chainId`, `verifyingContract` = this registry  
   On-chain, `hashEnrollmentAuthorization` returns the final digest; `domainSeparator()` matches that domain. Signature verification runs before the ZK verifier call, then the registry checks that the proof-bundled `walletAddress` matches the transaction payload.
 - **Revocation**: `revoke(nullifier, deadline, signature)` — EIP-712 `Revoke` over `nullifier` and `deadline` with the same domain; signer must be the stored `walletAddress`. `hashRevocationAuthorization` returns the digest to sign.
-- **Purge**: `purgeInvalidRecords()` scans the full historical nullifier list once per call and deletes records that are expired or whose issuer is no longer trusted.
+- **Purge**: `purgeInvalidRecords()` scans the active nullifier list once per call and deletes records that are expired or whose issuer is no longer trusted. Revoked and purged records are removed from the active scan list with swap-and-pop.
 - **Hardening**: signal length and field-range checks, verifier `try/catch`, low-**s** signature checks.
 
 If circuits or public signal layout change, regenerate `VcOprfEnrollmentUltraVerifier.sol` from the circuit artifact and redeploy.

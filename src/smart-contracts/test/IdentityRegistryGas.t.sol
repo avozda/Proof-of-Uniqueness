@@ -210,7 +210,10 @@ contract IdentityRegistryGasTest is Test {
 
     function testRevokeSuccess() public {
         _enroll(hex"01", _signals(900));
+        assertEq(registry.getIdentityCount(), 1);
+
         _revoke(900, block.timestamp + 1 hours);
+        assertEq(registry.getIdentityCount(), 0);
 
         vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
         registry.getIdentity(900);
@@ -248,6 +251,7 @@ contract IdentityRegistryGasTest is Test {
 
         uint256 purged = registry.purgeInvalidRecords();
         assertEq(purged, 1);
+        assertEq(registry.getIdentityCount(), 1);
 
         vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
         registry.getIdentity(910);
@@ -264,19 +268,41 @@ contract IdentityRegistryGasTest is Test {
 
         uint256 purged = registry.purgeInvalidRecords();
         assertEq(purged, 1);
+        assertEq(registry.getIdentityCount(), 0);
         assertEq(registry.purgeInvalidRecords(), 0);
 
         vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
         registry.getIdentity(920);
     }
 
-    function testPurgeInvalidRecordsScansFullHistoryEachCall() public {
+    function testPurgeInvalidRecordsOnlyScansActiveRecords() public {
         bytes memory proof = hex"01";
-        _enroll(proof, _signals(930));
-        _enroll(proof, _signals(931));
-        _enroll(proof, _signals(932));
+        bytes32[] memory expiredSignals = _signals(930);
+        expiredSignals[2] = bytes32(block.timestamp + 1);
+        _enroll(proof, expiredSignals);
+
+        bytes32[] memory revokedSignals = _signals(931);
+        _enroll(proof, revokedSignals);
+
+        bytes32[] memory activeSignals = _signals(932);
+        _enroll(proof, activeSignals);
+
+        _revoke(931, block.timestamp + 1 hours);
+        assertEq(registry.getIdentityCount(), 2);
+
+        vm.warp(block.timestamp + 2);
+        assertEq(registry.purgeInvalidRecords(), 1);
+        assertEq(registry.getIdentityCount(), 1);
+
+        vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
+        registry.getIdentity(930);
+
+        vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
+        registry.getIdentity(931);
+
+        assertTrue(registry.isIdentityValid(932));
 
         assertEq(registry.purgeInvalidRecords(), 0);
-        assertEq(registry.purgeInvalidRecords(), 0);
+        assertEq(registry.getIdentityCount(), 1);
     }
 }

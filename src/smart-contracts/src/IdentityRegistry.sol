@@ -59,8 +59,8 @@ contract IdentityRegistry {
     mapping(uint256 => IdentityRecord) public identitiesByNullifier;
     mapping(uint256 => bool) public trustedIssuers;
     mapping(address => bool) public owners;
-    // Historical append-only list used by purgeInvalidRecords() to scan every enrollment.
     uint256[] public registeredNullifiers;
+    mapping(uint256 => uint256) private registeredNullifierIndexPlusOne;
 
     event IdentityEnrolled(
         uint256 indexed nullifier,
@@ -181,6 +181,7 @@ contract IdentityRegistry {
         });
 
         registeredNullifiers.push(s.nullifier);
+        registeredNullifierIndexPlusOne[s.nullifier] = registeredNullifiers.length;
 
         emit IdentityEnrolled(
             s.nullifier,
@@ -201,7 +202,7 @@ contract IdentityRegistry {
             revert InvalidRevocationSignature();
         }
 
-        delete identitiesByNullifier[nullifier];
+        _removeIdentity(nullifier);
         emit IdentityRevoked(nullifier, walletAddress);
     }
 
@@ -271,26 +272,27 @@ contract IdentityRegistry {
 
     /// @notice Permissionless maintenance function to remove invalid identities.
     /// @dev Removes records that are expired or whose issuer is no longer trusted.
-    ///      Scans the full historical nullifier list from start to end each call.
+    ///      Scans the active nullifier list from start to end each call.
     /// @return purged Number of identity records removed.
     function purgeInvalidRecords() external returns (uint256 purged) {
         uint256 total = registeredNullifiers.length;
-        for (uint256 i = 0; i < total; i++) {
+        uint256 i = 0;
+        while (i < total) {
             uint256 nullifier = registeredNullifiers[i];
             IdentityRecord storage record = identitiesByNullifier[nullifier];
 
-            if (record.exists) {
-                uint256 issuerPubKeyHash =
-                    uint256(keccak256(abi.encodePacked(record.issuerPubKeyX, record.issuerPubKeyY)));
-                bool expired = block.timestamp > record.validUntil;
-                bool issuerUntrusted = !trustedIssuers[issuerPubKeyHash];
+            uint256 issuerPubKeyHash =
+                uint256(keccak256(abi.encodePacked(record.issuerPubKeyX, record.issuerPubKeyY)));
+            bool expired = block.timestamp > record.validUntil;
+            bool issuerUntrusted = !trustedIssuers[issuerPubKeyHash];
 
-                // delete() clears the live record but leaves the historical nullifier in the scan list.
-                if (expired || issuerUntrusted) {
-                    delete identitiesByNullifier[nullifier];
-                    emit IdentityPurged(nullifier, expired, issuerUntrusted);
-                    purged++;
-                }
+            if (expired || issuerUntrusted) {
+                _removeIdentity(nullifier);
+                emit IdentityPurged(nullifier, expired, issuerUntrusted);
+                purged++;
+                total--;
+            } else {
+                i++;
             }
         }
     }
@@ -350,6 +352,22 @@ contract IdentityRegistry {
 
     function _hashTypedDataV4(bytes32 structHash) internal view returns (bytes32) {
         return keccak256(abi.encodePacked("\x19\x01", domainSeparator(), structHash));
+    }
+
+    function _removeIdentity(uint256 nullifier) internal {
+        uint256 indexPlusOne = registeredNullifierIndexPlusOne[nullifier];
+        uint256 index = indexPlusOne - 1;
+        uint256 lastIndex = registeredNullifiers.length - 1;
+
+        if (index != lastIndex) {
+            uint256 movedNullifier = registeredNullifiers[lastIndex];
+            registeredNullifiers[index] = movedNullifier;
+            registeredNullifierIndexPlusOne[movedNullifier] = indexPlusOne;
+        }
+
+        registeredNullifiers.pop();
+        delete registeredNullifierIndexPlusOne[nullifier];
+        delete identitiesByNullifier[nullifier];
     }
 
     function _recover(bytes32 digest, bytes calldata signature) internal pure returns (address signer) {
