@@ -12,13 +12,26 @@ import {
   useWriteContract,
 } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { concatHex, keccak256, type Address, type Hex } from "viem";
+import {
+  concatHex,
+  createWalletClient,
+  http,
+  keccak256,
+  type Address,
+  type Hex,
+  type TransactionReceipt,
+} from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 
 import type { VerifiableCredential } from "../lib/vc";
 import type { HolderKeyPair } from "../lib/holderKey";
 import { identityRegistryAbi } from "../lib/contractAbi";
 import { formatIdentityRegistryTxError } from "../lib/contractErrors";
-import { CONTRACT_ADDRESSES } from "../lib/wagmi";
+import {
+  CONTRACT_ADDRESSES,
+  LOCAL_OWNER_PRIVATE_KEY,
+  localhost,
+} from "../lib/wagmi";
 import {
   buildVcOprfEnrollmentProofPackage,
   type OprfNetworkConfig,
@@ -88,6 +101,12 @@ export function ZKProofSection({
   const [isRevoking, setIsRevoking] = useState(false);
   const [revocationStatus, setRevocationStatus] = useState<string | null>(null);
   const [issuerStatus, setIssuerStatus] = useState<string | null>(null);
+  const [issuerTxHash, setIssuerTxHash] = useState<Hex | null>(null);
+  const [issuerReceipt, setIssuerReceipt] =
+    useState<TransactionReceipt | null>(null);
+  const [isIssuerSubmitting, setIsIssuerSubmitting] = useState(false);
+  const [isIssuerConfirming, setIsIssuerConfirming] = useState(false);
+  const [issuerTxError, setIssuerTxError] = useState<Error | null>(null);
   const [latestOnchainAction, setLatestOnchainAction] =
     useState<LatestOnchainAction>(null);
   const [enrollFallbackError, setEnrollFallbackError] = useState<string | null>(
@@ -146,14 +165,6 @@ export function ZKProofSection({
   } = useWriteContract({ mutation: { retry: false } });
 
   const {
-    writeContract: writeIssuerTx,
-    data: issuerTxHash,
-    isPending: isIssuerSubmitting,
-    error: issuerSubmitError,
-    reset: resetIssuerSubmit,
-  } = useWriteContract({ mutation: { retry: false } });
-
-  const {
     data: receipt,
     isLoading: isConfirming,
     isSuccess: receiptReady,
@@ -169,17 +180,6 @@ export function ZKProofSection({
     error: revokeReceiptWaitError,
   } = useWaitForTransactionReceipt({
     hash: revokeTxHash,
-    query: { retry: false },
-  });
-
-  const {
-    data: issuerReceipt,
-    isLoading: isIssuerConfirming,
-    isSuccess: issuerReceiptReady,
-    isError: issuerReceiptWaitFailed,
-    error: issuerReceiptWaitError,
-  } = useWaitForTransactionReceipt({
-    hash: issuerTxHash,
     query: { retry: false },
   });
 
@@ -205,7 +205,9 @@ export function ZKProofSection({
     setEnrollFallbackError(null);
     resetSubmit();
     resetRevokeSubmit();
-    resetIssuerSubmit();
+    setIssuerTxHash(null);
+    setIssuerReceipt(null);
+    setIssuerTxError(null);
   };
 
   const formatDuration = (durationMs: number): string => {
@@ -242,7 +244,9 @@ export function ZKProofSection({
     setCompletedGenerationSteps([]);
     setProofPackage(null);
     resetSubmit();
-    resetIssuerSubmit();
+    setIssuerTxHash(null);
+    setIssuerReceipt(null);
+    setIssuerTxError(null);
 
     try {
       const handleProgress = (event: ProgressEvent) => {
@@ -330,16 +334,59 @@ export function ZKProofSection({
     }
   };
 
-  const handleRegisterIssuerOnChain = () => {
+  const handleRegisterIssuerOnChain = async () => {
     if (!contractAddressValid || !contractHasCode) return;
     beginOnchainAction("issuer");
+    setIsIssuerSubmitting(true);
     setIssuerStatus("Submitting issuer registration transaction...");
-    writeIssuerTx({
-      address: contractAddress,
-      abi: identityRegistryAbi,
-      functionName: "addTrustedIssuer",
-      args: [issuerPublicKey.x, issuerPublicKey.y],
-    });
+
+    try {
+      const ownerAccount = privateKeyToAccount(LOCAL_OWNER_PRIVATE_KEY);
+      const ownerClient = createWalletClient({
+        account: ownerAccount,
+        chain: localhost,
+        transport: http(localhost.rpcUrls.default.http[0]),
+      });
+
+      const hash = await ownerClient.writeContract({
+        address: contractAddress,
+        abi: identityRegistryAbi,
+        functionName: "addTrustedIssuer",
+        args: [issuerPublicKey.x, issuerPublicKey.y],
+      });
+
+      setIssuerTxHash(hash);
+      setIsIssuerSubmitting(false);
+      setIsIssuerConfirming(true);
+      setIssuerStatus("Waiting for issuer registration confirmation...");
+
+      const confirmedReceipt = await publicClient?.waitForTransactionReceipt({
+        hash,
+      });
+      if (confirmedReceipt == null) {
+        throw new Error(
+          "Issuer transaction was submitted, but the local RPC client could not confirm it.",
+        );
+      }
+
+      setIssuerReceipt(confirmedReceipt);
+      if (confirmedReceipt.status !== "success") {
+        throw new Error("Issuer registration transaction failed on-chain.");
+      }
+
+      setIssuerStatus("Issuer registered on-chain.");
+      void refetchIssuerTrust();
+    } catch (err) {
+      setIssuerTxError(
+        err instanceof Error
+          ? err
+          : new Error("Unknown issuer registration error"),
+      );
+      setIssuerStatus(null);
+    } finally {
+      setIsIssuerSubmitting(false);
+      setIsIssuerConfirming(false);
+    }
   };
 
   const handleSubmitToContract = async () => {
@@ -525,21 +572,16 @@ export function ZKProofSection({
 
   const issuerTxFailedOnChain =
     Boolean(issuerTxHash) &&
-    issuerReceiptReady &&
     issuerReceipt != null &&
     issuerReceipt.status !== "success";
   const issuerTxOutcomeSettled =
     Boolean(issuerTxHash) && !isIssuerSubmitting && !isIssuerConfirming;
   const displayIssuerTxError =
-    issuerSubmitError != null
-      ? formatIdentityRegistryTxError(issuerSubmitError)
-      : issuerTxOutcomeSettled && issuerReceiptWaitFailed
-        ? issuerReceiptWaitError instanceof Error
-          ? formatIdentityRegistryTxError(issuerReceiptWaitError)
-          : String(issuerReceiptWaitError)
-        : issuerTxOutcomeSettled && issuerTxFailedOnChain
-          ? "Issuer registration transaction failed on-chain."
-          : null;
+    issuerTxError != null
+      ? formatIdentityRegistryTxError(issuerTxError)
+      : issuerTxOutcomeSettled && issuerTxFailedOnChain
+        ? "Issuer registration transaction failed on-chain."
+        : null;
 
   useEffect(() => {
     if (isIssuerSubmitting) {
@@ -550,19 +592,18 @@ export function ZKProofSection({
       setIssuerStatus("Waiting for issuer registration confirmation...");
       return;
     }
-    if (issuerSubmitError != null || displayIssuerTxError != null) {
+    if (issuerTxError != null || displayIssuerTxError != null) {
       setIssuerStatus(null);
     }
   }, [
     displayIssuerTxError,
     isIssuerConfirming,
     isIssuerSubmitting,
-    issuerSubmitError,
+    issuerTxError,
   ]);
 
   useEffect(() => {
     if (
-      !issuerReceiptReady ||
       issuerReceipt == null ||
       issuerReceipt.status !== "success"
     ) {
@@ -570,7 +611,7 @@ export function ZKProofSection({
     }
     setIssuerStatus("Issuer registered on-chain.");
     void refetchIssuerTrust();
-  }, [issuerReceipt, issuerReceiptReady, refetchIssuerTrust]);
+  }, [issuerReceipt, refetchIssuerTrust]);
 
   useEffect(() => {
     if (issuerTrusted === true) {

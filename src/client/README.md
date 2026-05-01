@@ -36,7 +36,7 @@ The current client is wired to local services only:
 - OPRF node 3 at `http://127.0.0.1:10002`
 - MetaMask or another injected wallet connected to the local chain
 
-The `IdentityRegistry` contract address is hardcoded in [src/lib/wagmi.ts](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/lib/wagmi.ts:1).
+The `IdentityRegistry` contract address is hardcoded in [src/lib/wagmi.ts](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/lib/wagmi.ts:1). Issuer registration also uses the default local Anvil owner private key from this file, so the tester does not need to import that owner account into MetaMask. MetaMask is still used for enrollment and revocation.
 
 ## Required Assets
 

@@ -7,6 +7,8 @@ Privacy-preserving identity verification based on zkSNARKs using:
 - threshold OPRF nodes for enrollment
 - EIP-712 wallet signatures for on-chain enrollment and revocation
 
+This is a research prototype for testing the proposed design. It is not production ready code.
+
 ## Repo layout
 
 ```text
@@ -26,11 +28,13 @@ You need the usual local tooling for this repo:
 - `docker`
 - `foundry` (`forge`, `anvil`)
 - `node` + `npm`
-- `nargo` / `bb` only if you want to rebuild circuit artifacts
+- `nargo` / `bb` (only if you want to rebuild circuit artifacts)
 
 ## Setup
 
-### 1. Init submodules
+### Quick setup with Make
+
+First initialize the submodules:
 
 This repo depends on nested code inside submodules, including vendored Noir dependencies used by the circuits.
 
@@ -38,7 +42,45 @@ This repo depends on nested code inside submodules, including vendored Noir depe
 git submodule update --init --recursive
 ```
 
-### 2. Start the local OPRF stack
+Then use the root Makefile:
+
+Start the TACEO:OPRF testnet:
+
+```bash
+make oprf-testnet
+```
+
+This also starts a local Anvil chain. If you only need the blockchain network without the OPRF stack, run:
+
+```bash
+make network
+```
+
+In another terminal, deploy the smart contract using the live OPRF public key:
+
+```bash
+make deploy
+```
+
+Then start the web client:
+
+```bash
+make web
+```
+
+Open [http://localhost:5173](http://localhost:5173).
+
+In the local client, issuer registration is sent with the default Anvil owner private key. The connected MetaMask wallet is still used for enrollment and revocation.
+
+### Manual setup
+
+#### 1. Init submodules
+
+```bash
+git submodule update --init --recursive
+```
+
+#### 2. Start the local OPRF stack
 
 The client expects three local OPRF nodes at:
 
@@ -63,13 +105,13 @@ What this script does:
 
 Keep this terminal running.
 
-### 3. Anvil
+This script also starts a local Anvil chain. If you only need the blockchain network without the OPRF stack, run Anvil manually:
 
 ```bash
-anvil
+anvil --code-size-limit 50000
 ```
 
-### 4. Deploy the smart contract
+#### 3. Deploy the smart contract
 
 Recommended local deployment uses the live OPRF public key from the running node:
 
@@ -85,7 +127,7 @@ After deployment, update the client contract address in:
 
 If you redeploy `IdentityRegistry`, the client must point to the new address.
 
-### 5. Run the client
+#### 4. Run the client
 
 In another terminal:
 
