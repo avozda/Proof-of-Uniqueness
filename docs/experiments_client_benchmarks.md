@@ -50,12 +50,12 @@ Enrollment proof verification is intentionally not included here because enrollm
 
 `benchmark-current-stack.mjs` average timings:
 
-- Poseidon hash: `0.163 ms`
-- BabyJubJub EdDSA sign: `15.674 ms`
-- VC preprocessing (Merkle commitment rebuild): `1.399 ms`
-- `vc_blinded_query_auth_proof` witness generation: `604.469 ms` average, `602.768 ms` median
-- `vc_blinded_query_auth_proof` proof generation: `9344.151 ms` average, `9360.566 ms` median
-- `vc_blinded_query_auth_proof` `bb verify`: `73.027 ms` average, `73.035 ms` median
+- Poseidon hash: `0.154 ms`
+- BabyJubJub EdDSA sign: `14.021 ms`
+- VC preprocessing (Merkle commitment rebuild): `1.305 ms`
+- `vc_blinded_query_auth_proof` witness generation: `619.572 ms` average, `610.952 ms` median
+- `vc_blinded_query_auth_proof` proof generation: `9601.688 ms` average, `9659.752 ms` median
+- `vc_blinded_query_auth_proof` `bb verify`: `73.505 ms` average, `73.703 ms` median
 - `vc_blinded_query_auth_proof` public outputs: `3`
 - `vc_blinded_query_auth_proof` proof size: `2144 bytes`
 

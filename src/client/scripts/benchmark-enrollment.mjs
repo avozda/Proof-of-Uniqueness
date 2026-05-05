@@ -310,7 +310,7 @@ async function benchmarkCircuit(circuitPath, inputs, iterations) {
       witnessMs: average(witnessRows.map((r) => r.witnessMs)),
       proveMs: average(proveRows.map((r) => r.proveMs)),
       proofBytes: proofData.proof.length,
-      publicInputs: proofData.publicInputs.length,
+      publicInputsCount: proofData.publicInputs.length,
     },
     medians: {
       witnessMs: median(witnessRows.map((r) => r.witnessMs)),
