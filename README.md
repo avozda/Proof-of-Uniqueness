@@ -50,11 +50,7 @@ Start the TACEO:OPRF testnet:
 make oprf-testnet
 ```
 
-This also starts a local Anvil chain. If you only need the blockchain network without the OPRF stack, run:
-
-```bash
-make network
-```
+This also starts a local Anvil chain.
 
 In another terminal, deploy the smart contract using the live OPRF public key:
 

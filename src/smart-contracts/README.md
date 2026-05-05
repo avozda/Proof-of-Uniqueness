@@ -13,6 +13,26 @@ forge test
 forge fmt
 ```
 
+## Gas Benchmarks
+
+Run the real enrollment verifier benchmark from this directory:
+
+```bash
+forge test --match-contract IdentityRegistryEnrollmentVerifierGasTest --gas-report -vv
+```
+
+Current real-verifier gas:
+
+- `VcOprfEnrollmentUltraVerifier.verify`: `376,502 gas`
+- `IdentityRegistry.enroll`: `614,514 gas`
+
+These are reusable execution-gas numbers after deployment. One-time deployment costs are separate:
+
+- `VcOprfEnrollmentUltraVerifier`: `2,489,530 gas`
+- `IdentityRegistry`: `1,535,752 gas`
+
+Registry gas and scaling tests that use mock verifiers should not be read as zk verifier gas.
+
 ## Deploy
 
 ```bash

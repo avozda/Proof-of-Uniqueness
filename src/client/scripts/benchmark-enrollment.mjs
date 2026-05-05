@@ -1,8 +1,9 @@
-// Benchmark the vc_oprf_enrollment_proof circuit (witness gen, prove, verify).
+// Benchmark the vc_oprf_enrollment_proof circuit (witness gen and proving).
 // The OPRF transcript is synthesised locally so the script is fully self-contained
 // (no network, no node operator needed).
 
 import fs from "node:fs";
+import path from "node:path";
 import { performance } from "node:perf_hooks";
 
 import { buildEddsa, buildPoseidon } from "circomlibjs";
@@ -41,7 +42,9 @@ const BB_BACKEND_OPTIONS = {
   threads: 1,
   memory: { initial: 4096, maximum: 65536 },
 };
-const BENCH_WALLET_ADDRESS = 0x1234567890abcdef1234567890abcdef12345678n;
+const BENCH_WALLET_PRIVATE_KEY = 0xa11cen;
+// vm.addr(0xA11CE), so Foundry can sign the enrollment authorization.
+const BENCH_WALLET_ADDRESS = 0xe05fcc23807536bee418f142d19fa0d21bb0cff7n;
 
 function bytesToField(bytes) {
   let v = 0n;
@@ -103,6 +106,14 @@ function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
   const m = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[m] : (sorted[m - 1] + sorted[m]) / 2;
+}
+
+function toHex(value, bytes = 32) {
+  return `0x${BigInt(value).toString(16).padStart(bytes * 2, "0")}`;
+}
+
+function bytesToHex(bytes) {
+  return `0x${Buffer.from(bytes).toString("hex")}`;
 }
 
 function buildVcContext(eddsa, poseidon) {
@@ -254,34 +265,30 @@ async function benchmarkCircuit(circuitPath, inputs, iterations) {
   const noir = new Noir(circuit);
   const backend = new BarretenbergBackend(circuit, BB_BACKEND_OPTIONS);
 
-  const rows = [];
+  const witnessRows = [];
+  const proveRows = [];
+  let proofData;
 
   try {
-    // One warm-up iteration, not counted.
+    // Warm up Noir execution and Barretenberg proving before timed samples.
     {
       const { witness } = await noir.execute(inputs);
-      const proofData = await backend.generateProof(witness);
-      const ok = await backend.verifyProof(proofData);
-      if (!ok) throw new Error("warm-up self-check failed");
+      await backend.generateProof(witness);
     }
 
     for (let i = 0; i < iterations; i += 1) {
       const t0 = performance.now();
-      const { witness } = await noir.execute(inputs);
+      await noir.execute(inputs);
       const t1 = performance.now();
-      const proofData = await backend.generateProof(witness);
-      const t2 = performance.now();
-      const verified = await backend.verifyProof(proofData);
-      const t3 = performance.now();
+      witnessRows.push({ witnessMs: t1 - t0 });
+    }
 
-      rows.push({
-        witnessMs: t1 - t0,
-        proveMs: t2 - t1,
-        verifyMs: t3 - t2,
-        proofBytes: proofData.proof.length,
-        publicInputs: proofData.publicInputs.length,
-        verified,
-      });
+    const { witness } = await noir.execute(inputs);
+    for (let i = 0; i < iterations; i += 1) {
+      const t0 = performance.now();
+      proofData = await backend.generateProof(witness);
+      const t1 = performance.now();
+      proveRows.push({ proveMs: t1 - t0 });
     }
   } finally {
     await backend.destroy();
@@ -289,19 +296,27 @@ async function benchmarkCircuit(circuitPath, inputs, iterations) {
 
   return {
     iterations,
-    runs: rows,
+    witness: {
+      runs: witnessRows,
+      averageMs: average(witnessRows.map((r) => r.witnessMs)),
+      medianMs: median(witnessRows.map((r) => r.witnessMs)),
+    },
+    proving: {
+      runs: proveRows,
+      averageMs: average(proveRows.map((r) => r.proveMs)),
+      medianMs: median(proveRows.map((r) => r.proveMs)),
+    },
     averages: {
-      witnessMs: average(rows.map((r) => r.witnessMs)),
-      proveMs: average(rows.map((r) => r.proveMs)),
-      verifyMs: average(rows.map((r) => r.verifyMs)),
-      proofBytes: rows[0].proofBytes,
-      publicInputs: rows[0].publicInputs,
+      witnessMs: average(witnessRows.map((r) => r.witnessMs)),
+      proveMs: average(proveRows.map((r) => r.proveMs)),
+      proofBytes: proofData.proof.length,
+      publicInputs: proofData.publicInputs.length,
     },
     medians: {
-      witnessMs: median(rows.map((r) => r.witnessMs)),
-      proveMs: median(rows.map((r) => r.proveMs)),
-      verifyMs: median(rows.map((r) => r.verifyMs)),
+      witnessMs: median(witnessRows.map((r) => r.witnessMs)),
+      proveMs: median(proveRows.map((r) => r.proveMs)),
     },
+    proofData,
   };
 }
 
@@ -323,6 +338,26 @@ async function main() {
     enrollmentInputs,
     iterations,
   );
+
+  if (process.env.FOUNDRY_FIXTURE) {
+    const fixture = {
+      proof: bytesToHex(enrollmentResult.proofData.proof),
+      publicSignals: enrollmentResult.proofData.publicInputs.map((x) =>
+        toHex(x),
+      ),
+      walletPrivateKey: toHex(BENCH_WALLET_PRIVATE_KEY),
+      walletAddress: toHex(BENCH_WALLET_ADDRESS, 20),
+      circuit: "vc_oprf_enrollment_proof",
+    };
+    fs.mkdirSync(path.dirname(process.env.FOUNDRY_FIXTURE), {
+      recursive: true,
+    });
+    fs.writeFileSync(
+      process.env.FOUNDRY_FIXTURE,
+      `${JSON.stringify(fixture, null, 2)}\n`,
+    );
+  }
+  delete enrollmentResult.proofData;
 
   console.log(
     JSON.stringify(

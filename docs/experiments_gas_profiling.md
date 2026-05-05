@@ -1,13 +1,11 @@
 # Gas Profiling Notes
 
-This repo still uses an on-chain verifier for enrollment, so enrollment gas is mostly driven by proof verification.
+This repo verifies the enrollment proof on-chain, so the important enrollment gas number is the reusable per-enrollment transaction cost after the verifier and registry are already deployed.
 
-Revocation is much simpler than enrollment: it is a wallet signature check plus record and active-list removal.
+Last refreshed: 2026-05-05 from:
 
-Last refreshed: 2026-04-30 from:
-
-- `forge test --gas-report`
-- `forge test --match-test testEnrollmentScaling -vv`
+- `forge test --match-contract IdentityRegistryEnrollmentVerifierGasTest --gas-report -vv`
+- `forge test --match-contract IdentityRegistryGasTest --gas-report -vv`
 - `forge test --match-test testPurgeInvalidRecordsGasProfile -vv`
 - `forge build --sizes`
 
@@ -16,16 +14,20 @@ Last refreshed: 2026-04-30 from:
 Run from `src/smart-contracts`:
 
 ```bash
-forge test --gas-report
-forge test --match-test testEnrollmentScaling -vv
+forge test --match-contract IdentityRegistryEnrollmentVerifierGasTest --gas-report -vv
+forge test --match-contract IdentityRegistryGasTest --gas-report -vv
 forge test --match-test testPurgeInvalidRecordsGasProfile -vv
 forge build --sizes
 ```
 
+`IdentityRegistryEnrollmentVerifierGasTest` is the canonical enrollment verifier benchmark. It loads a generated `vc_oprf_enrollment_proof` fixture and calls the real generated `VcOprfEnrollmentUltraVerifier`.
+
+`IdentityRegistryGasTest` and `IdentityRegistryScalingTest` use mock verifiers for registry behavior and scaling tests. Do not use their `enroll(...)` gas as zk verifier gas.
+
 ## What to look at
 
 - `enroll(...)`
-  - includes proof verification,
+  - includes real proof verification in `IdentityRegistryEnrollmentVerifierGasTest`,
   - trusted OPRF public-key check,
   - issuer trust check,
   - expiry check,
@@ -64,22 +66,26 @@ The contract expects exactly 7 public signals from `vc_oprf_enrollment_proof`:
 
 ## Latest measurements
 
-- `IdentityRegistry` deployment cost: `1534996 gas`
-- `IdentityRegistry` runtime size: `6479 bytes`
-- `IdentityRegistry` initcode size: `7022 bytes`
-- Generated `UltraVerifier` runtime size: `11053 bytes`
-- `enroll(...)` average gas in the full gas report: `184194`
-- `revoke(...)` average gas in the full gas report: `44183`
-- `purgeInvalidRecords()` in the full gas report:
-  - min: `23520`
-  - avg: `2992170`
-  - median: `56571`
-  - max: `27561684`
-  - calls: `20`
-- Sequential enrollment scaling sample:
-  - Enrollment `#1`: `189948 gas`
-  - Enrollment `#100`: `152511 gas`
-  - Enrollment `#1000`: `152685 gas`
+Canonical real enrollment verifier gas:
+
+- `VcOprfEnrollmentUltraVerifier.verify`: `376,502 gas`
+- `IdentityRegistry.enroll` with the real verifier: `614,514 gas`
+
+Deployment and code size are separate from reusable per-enrollment gas:
+
+- `VcOprfEnrollmentUltraVerifier` deployment cost: `2,489,530 gas`
+- `IdentityRegistry` deployment cost in the real-verifier benchmark: `1,535,752 gas`
+- `VcOprfEnrollmentUltraVerifier` runtime size: `11,053 bytes`
+- `VcOprfEnrollmentUltraVerifier` initcode size: `13,868 bytes`
+- `IdentityRegistry` runtime size: `6,479 bytes`
+- `IdentityRegistry` initcode size: `7,022 bytes`
+
+Registry-only behavior tests with the mock verifier currently show:
+
+- `revoke(...)` average gas: `42,162 gas`
+- `purgeInvalidRecords()` average gas in the focused registry test: `47,011 gas`
+
+Those mock-verifier registry numbers are useful for non-zk registry behavior only. They intentionally exclude real enrollment proof verification.
 
 ### Purge scaling profile
 
@@ -104,9 +110,10 @@ Equivalently, an invalid active record that is removed costs about `5,524 gas` t
 
 ## Practical takeaway
 
-- Enrollment is the expensive path.
-- Once the verifier is deployed, per-enrollment gas stays roughly flat even at higher active nullifier counts in the scaling test.
-- Revocation is still much cheaper than enrollment because it no longer verifies a zk proof, but it now pays for active-list removal.
+- Enrollment is the expensive path: `614,514 gas` for the full transaction path with the real verifier.
+- The verifier-only part of enrollment is `376,502 gas`.
+- Deployment/setup is separate from the reusable per-user enrollment cost.
+- Revocation is much cheaper than enrollment because it no longer verifies a zk proof, but it still pays for active-list removal.
 - Purging grows linearly with active records only. Removed or revoked records no longer add recurring scan cost to later purge calls.
 - Contract size is still affected by the generated verifier contract, not just the registry itself.
 

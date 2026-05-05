@@ -82,11 +82,6 @@ interface RawProofData {
   publicInputs: string[];
 }
 
-interface BackendSelfCheckResult {
-  verified: boolean;
-  vkHash?: string;
-}
-
 export interface VcOprfEnrollmentProofPackage {
   proof: `0x${string}`;
   publicSignals: `0x${string}`[];
@@ -188,7 +183,6 @@ function padMerkleLeaves(leaves: bigint[]): bigint[] {
 }
 
 function buildFieldValuesOrdered(vc: VerifiableCredential): bigint[] {
-  // Keep this order aligned with VC_FIELD_LABELS and the Noir circuit inputs.
   const s = vc.credentialSubject;
   return [
     BigInt(s.holderPublicKey.x),
@@ -462,24 +456,6 @@ async function generateWithNoir(
     throw err;
   };
 
-  const verifyInBackend = async (
-    backend: BarretenbergBackend,
-    proofData: RawProofData,
-  ): Promise<BackendSelfCheckResult> => {
-    const verified = await backend.verifyProof(proofData as never);
-    let vkHash: string | undefined;
-    try {
-      const recursiveArtifacts = await backend.generateRecursiveProofArtifacts(
-        proofData as never,
-        proofData.publicInputs.length,
-      );
-      vkHash = recursiveArtifacts.vkHash;
-    } catch {
-      // Optional diagnostic only.
-    }
-    return { verified, vkHash };
-  };
-
   const withTimeout = async <T>(
     label: string,
     ms: number,
@@ -516,23 +492,11 @@ async function generateWithNoir(
       BB_BACKEND_OPTIONS,
     );
     try {
-      const proofData = (await withTimeout(
+      return (await withTimeout(
         "backend.generateProof",
         180_000,
         backend.generateProof(witness),
       ).catch(wrapNoirError)) as RawProofData;
-      const selfCheck = await withTimeout(
-        "backend.verifyProof",
-        60_000,
-        verifyInBackend(backend, proofData as RawProofData),
-      ).catch(wrapNoirError);
-      if (!selfCheck.verified) {
-        throw new Error(
-          "Local backend rejected the generated proof during self-check",
-        );
-      }
-
-      return proofData;
     } finally {
       await backend.destroy();
     }
@@ -682,9 +646,10 @@ async function fetchLiveOprfTranscript(
     "Collect threshold OPRF responses",
     async () => {
       const nextChallenge = generateChallengeRequest(sessions);
-      const nextProofShares = await finishSessions(sessions, nextChallenge).catch(
-        (err) => wrapOprfNodeErrors("session finish", err),
-      );
+      const nextProofShares = await finishSessions(
+        sessions,
+        nextChallenge,
+      ).catch((err) => wrapOprfNodeErrors("session finish", err));
       return { challenge: nextChallenge, proofShares: nextProofShares };
     },
   );
