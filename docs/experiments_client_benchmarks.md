@@ -61,8 +61,8 @@ Enrollment proof verification is intentionally not included here because enrollm
 
 `benchmark-enrollment.mjs` average timings:
 
-- `vc_oprf_enrollment_proof` witness generation: `1254.659 ms` average, `1254.904 ms` median
-- `vc_oprf_enrollment_proof` proof generation: `18146.380 ms` average, `18141.442 ms` median
+- `vc_oprf_enrollment_proof` witness generation: `1245.316 ms` average, `1235.637 ms` median
+- `vc_oprf_enrollment_proof` proof generation: `17957.686 ms` average, `17907.622 ms` median
 - `vc_oprf_enrollment_proof` public outputs: `7`
 - `vc_oprf_enrollment_proof` proof size: `2144 bytes`
 
