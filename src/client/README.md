@@ -9,6 +9,12 @@ The app lets you:
 - register the issuer on-chain
 - enroll or revoke an identity through `IdentityRegistry`
 
+## Technical Flow
+
+The client prepares the VC fields in the same order expected by the Noir circuits. For OPRF access, it builds a `vc_blinded_query_auth_proof` proof that binds the holder key to the blinded query and request id. The local OPRF nodes verify that proof before returning threshold responses.
+
+After the browser verifies and unblinds the OPRF transcript, it builds the `vc_oprf_enrollment_proof` proof. That proof exposes the trusted OPRF public key, VC expiry, issuer key, wallet address, and nullifier. The connected wallet signs an EIP-712 enrollment message, then the client calls `IdentityRegistry.enroll`. Revocation is lighter: the wallet signs an EIP-712 revocation message and the client calls `revoke`.
+
 ## Run
 
 ```bash
@@ -34,9 +40,12 @@ The current client is wired to local services only:
 - OPRF node 1 at `http://127.0.0.1:10000`
 - OPRF node 2 at `http://127.0.0.1:10001`
 - OPRF node 3 at `http://127.0.0.1:10002`
+- OPRF threshold `2`
+- OPRF auth module `vc-ownership`
+- local API key `test`
 - MetaMask or another injected wallet connected to the local chain
 
-The `IdentityRegistry` contract address is hardcoded in [src/lib/wagmi.ts](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/lib/wagmi.ts:1). Issuer registration also uses the default local Anvil owner private key from this file, so the tester does not need to import that owner account into MetaMask. MetaMask is still used for enrollment and revocation.
+The `IdentityRegistry` contract address is hardcoded in [src/lib/wagmi.ts](src/lib/wagmi.ts). Issuer registration also uses the default local Anvil owner private key from this file, so the tester does not need to import that owner account into MetaMask. MetaMask is still used for enrollment and revocation.
 
 ## Required Assets
 
@@ -51,10 +60,10 @@ These files must exist in `public/`:
 
 If a WASM file is missing or served as HTML, browser-side proving will fail.
 
-## Main Files
+## Core Files
 
-- App shell: [src/App.tsx](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/App.tsx:1)
-- Enrollment / revocation UI: [src/components/ZKProofSection.tsx](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/components/ZKProofSection.tsx:1)
-- OPRF proof builder: [src/lib/oprfEnrollment.ts](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/lib/oprfEnrollment.ts:1)
-- Contract ABI: [src/lib/contractAbi.ts](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/lib/contractAbi.ts:1)
-- Chain + contract config: [src/lib/wagmi.ts](/Users/adamvozda/Documents/Proof-of-Uniqueness/src/client/src/lib/wagmi.ts:1)
+- App shell: [src/App.tsx](src/App.tsx)
+- Enrollment / revocation UI: [src/components/ZKProofSection.tsx](src/components/ZKProofSection.tsx)
+- OPRF proof builder: [src/lib/oprfEnrollment.ts](src/lib/oprfEnrollment.ts)
+- Contract ABI: [src/lib/contractAbi.ts](src/lib/contractAbi.ts)
+- Chain + contract config: [src/lib/wagmi.ts](src/lib/wagmi.ts)
