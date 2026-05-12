@@ -2,12 +2,19 @@
 
 Privacy-preserving identity verification based on zkSNARKs using:
 
-- Noir + Barretenberg proofs
-- BabyJubJub EdDSA holder and issuer keys
+- Verifiable credentials
+- Noir zk circuits
 - threshold OPRF nodes for enrollment
-- EIP-712 wallet signatures for on-chain enrollment and revocation
 
 This is a research prototype for testing the proposed design. It is not production ready code.
+
+## How it works
+
+The local app issues a demo verifiable credential (VC) with BabyJubJub issuer and holder keys. In the browser, the holder first proves that the VC authorizes a blinded OPRF request. The local OPRF nodes verify that proof, return threshold OPRF responses, and the browser verifies the live transcript.
+
+The browser then builds a second Noir proof for enrollment. That proof ties together the VC, the holder key, the connected wallet address, and the verified OPRF transcript. `IdentityRegistry` verifies the final proof on-chain, stores the resulting nullifier, and uses EIP-712 wallet signatures for enrollment authorization and revocation.
+
+![Enrollment flow](./docs/enroll-flow.png)
 
 ## Repo layout
 
@@ -18,6 +25,15 @@ src/
 ├── oprf-testnet/      Local OPRF node stack and auth module
 └── smart-contracts/   Foundry project with IdentityRegistry
 ```
+
+## Component responsibilities
+
+- `src/client`: builds demo VCs, generates browser proofs, talks to OPRF nodes, and submits registry transactions.
+- `src/circuits`: contains the active Noir circuits for VC-backed OPRF authentication and on-chain enrollment.
+- `src/oprf-testnet`: runs the local TACEO:OPRF node stack and the VC ownership auth module.
+- `src/smart-contracts`: verifies enrollment proofs and stores minimal identity state in `IdentityRegistry`.
+
+Circuit artifacts must stay in sync across these pieces. If a circuit changes, rebuild the circuit JSON, Rust verification key, generated Solidity verifier, and client `public/` assets together.
 
 ## Prerequisites
 
