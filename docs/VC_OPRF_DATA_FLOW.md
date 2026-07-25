@@ -7,10 +7,12 @@ This is the current flow used by the repo.
 The client:
 
 1. Encodes the VC fields into field elements.
-2. Rebuilds the labeled Merkle leaves used by the circuits.
-3. Verifies the issuer signature inside the auth circuit.
-4. Uses the holder key to sign the OPRF auth message inside the auth circuit.
-5. Outputs only three public values from the auth proof:
+2. Derives the private, renewal-stable identity hash as
+   `Poseidon(credentialSubject.id, dateOfBirth, placeOfBirth)`.
+3. Rebuilds the labeled Merkle leaves used by the circuits.
+4. Verifies the issuer signature inside the auth circuit.
+5. Uses the holder key to sign the OPRF auth message inside the auth circuit.
+6. Outputs only three public values from the auth proof:
    - `request_id_field`
    - `blinded_query_x`
    - `blinded_query_y`
@@ -56,6 +58,7 @@ The enrollment circuit proves:
 
 - the VC fields are internally consistent,
 - the issuer signature is valid,
+- the private identity hash contains only the person-invariant subject id, date of birth, and place of birth,
 - the holder key signed `Poseidon(hash_id, wallet_address)`,
 - the OPRF transcript is valid for that same private `hash_id`.
 

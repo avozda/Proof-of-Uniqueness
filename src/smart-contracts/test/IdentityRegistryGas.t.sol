@@ -249,8 +249,9 @@ contract IdentityRegistryGasTest is Test {
 
         vm.warp(block.timestamp + 2);
 
-        uint256 purged = registry.purgeInvalidRecords();
+        (uint256 purged, uint256 nextIndex) = registry.purgeInvalidRecords(0, 10);
         assertEq(purged, 1);
+        assertEq(nextIndex, 0);
         assertEq(registry.getIdentityCount(), 1);
 
         vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
@@ -266,10 +267,14 @@ contract IdentityRegistryGasTest is Test {
 
         registry.removeTrustedIssuer(ISSUER_X, ISSUER_Y);
 
-        uint256 purged = registry.purgeInvalidRecords();
+        (uint256 purged, uint256 nextIndex) = registry.purgeInvalidRecords(0, 10);
         assertEq(purged, 1);
+        assertEq(nextIndex, 0);
         assertEq(registry.getIdentityCount(), 0);
-        assertEq(registry.purgeInvalidRecords(), 0);
+
+        (purged, nextIndex) = registry.purgeInvalidRecords(0, 10);
+        assertEq(purged, 0);
+        assertEq(nextIndex, 0);
 
         vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
         registry.getIdentity(920);
@@ -291,7 +296,9 @@ contract IdentityRegistryGasTest is Test {
         assertEq(registry.getIdentityCount(), 2);
 
         vm.warp(block.timestamp + 2);
-        assertEq(registry.purgeInvalidRecords(), 1);
+        (uint256 purged, uint256 nextIndex) = registry.purgeInvalidRecords(0, 10);
+        assertEq(purged, 1);
+        assertEq(nextIndex, 0);
         assertEq(registry.getIdentityCount(), 1);
 
         vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
@@ -302,7 +309,67 @@ contract IdentityRegistryGasTest is Test {
 
         assertTrue(registry.isIdentityValid(932));
 
-        assertEq(registry.purgeInvalidRecords(), 0);
+        (purged, nextIndex) = registry.purgeInvalidRecords(0, 10);
+        assertEq(purged, 0);
+        assertEq(nextIndex, 0);
+        assertEq(registry.getIdentityCount(), 1);
+    }
+
+    function testPurgeInvalidRecordsRejectsZeroLimit() public {
+        vm.expectRevert(IdentityRegistry.InvalidPurgeLimit.selector);
+        registry.purgeInvalidRecords(0, 0);
+    }
+
+    function testPurgeInvalidRecordsPaginatesAcrossSwapAndPop() public {
+        bytes memory proof = hex"01";
+
+        bytes32[] memory activeFirst = _signals(940);
+        activeFirst[2] = bytes32(block.timestamp + 1000);
+        _enroll(proof, activeFirst);
+
+        bytes32[] memory expiredMiddle = _signals(941);
+        expiredMiddle[2] = bytes32(block.timestamp + 1);
+        _enroll(proof, expiredMiddle);
+
+        bytes32[] memory activeLast = _signals(942);
+        activeLast[2] = bytes32(block.timestamp + 1000);
+        _enroll(proof, activeLast);
+
+        bytes32[] memory expiredLast = _signals(943);
+        expiredLast[2] = bytes32(block.timestamp + 1);
+        _enroll(proof, expiredLast);
+
+        vm.warp(block.timestamp + 2);
+
+        (uint256 purged, uint256 nextIndex) = registry.purgeInvalidRecords(0, 2);
+        assertEq(purged, 1);
+        assertEq(nextIndex, 1);
+        assertEq(registry.getIdentityCount(), 3);
+
+        (purged, nextIndex) = registry.purgeInvalidRecords(nextIndex, 1);
+        assertEq(purged, 1);
+        assertEq(nextIndex, 1);
+        assertEq(registry.getIdentityCount(), 2);
+
+        (purged, nextIndex) = registry.purgeInvalidRecords(nextIndex, 1);
+        assertEq(purged, 0);
+        assertEq(nextIndex, 0);
+        assertTrue(registry.isIdentityValid(940));
+        assertTrue(registry.isIdentityValid(942));
+
+        vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
+        registry.getIdentity(941);
+
+        vm.expectRevert(IdentityRegistry.IdentityNotFound.selector);
+        registry.getIdentity(943);
+    }
+
+    function testPurgeInvalidRecordsOutOfRangeStartCompletesPass() public {
+        _enroll(hex"01", _signals(950));
+
+        (uint256 purged, uint256 nextIndex) = registry.purgeInvalidRecords(5, 1);
+        assertEq(purged, 0);
+        assertEq(nextIndex, 0);
         assertEq(registry.getIdentityCount(), 1);
     }
 }

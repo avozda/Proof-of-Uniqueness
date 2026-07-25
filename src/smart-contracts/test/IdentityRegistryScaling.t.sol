@@ -123,10 +123,11 @@ contract IdentityRegistryScalingTest is Test {
             _populate(fresh, 10_000 + (i * 10_000), sizes[i], block.timestamp + 1000);
 
             uint256 gasStart = gasleft();
-            uint256 purged = fresh.purgeInvalidRecords();
+            (uint256 purged, uint256 nextIndex) = fresh.purgeInvalidRecords(0, sizes[i]);
             liveScanGas[i] = gasStart - gasleft();
 
             assertEq(purged, 0);
+            assertEq(nextIndex, 0);
             console.log("Purge live records:", sizes[i]);
             console.log("Purge live scan gas:", liveScanGas[i]);
             console.log("Purge live scan gas per record:", liveScanGas[i] / sizes[i]);
@@ -138,10 +139,11 @@ contract IdentityRegistryScalingTest is Test {
             vm.warp(block.timestamp + 2);
 
             uint256 gasStart = gasleft();
-            uint256 purged = fresh.purgeInvalidRecords();
+            (uint256 purged, uint256 nextIndex) = fresh.purgeInvalidRecords(0, sizes[i]);
             uint256 removeGas = gasStart - gasleft();
 
             assertEq(purged, sizes[i]);
+            assertEq(nextIndex, 0);
             assertEq(fresh.getIdentityCount(), 0);
             console.log("Purge removed records:", sizes[i]);
             console.log("Purge remove gas:", removeGas);
@@ -149,10 +151,11 @@ contract IdentityRegistryScalingTest is Test {
             console.log("Purge marginal remove gas per record:", (removeGas - liveScanGas[i]) / sizes[i]);
 
             gasStart = gasleft();
-            purged = fresh.purgeInvalidRecords();
+            (purged, nextIndex) = fresh.purgeInvalidRecords(0, sizes[i]);
             uint256 emptyScanGas = gasStart - gasleft();
 
             assertEq(purged, 0);
+            assertEq(nextIndex, 0);
             assertEq(fresh.getIdentityCount(), 0);
             console.log("Purge post-removal active records:", fresh.getIdentityCount());
             console.log("Purge post-removal empty scan gas:", emptyScanGas);

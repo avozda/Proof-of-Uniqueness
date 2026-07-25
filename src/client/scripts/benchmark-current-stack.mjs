@@ -218,12 +218,8 @@ function buildAuthInputs(eddsa, poseidon) {
   const hashId = hashN(
     [
       fieldValues[2],
-      fieldValues[5],
       fieldValues[3],
       fieldValues[7],
-      fieldValues[8],
-      fieldValues[6],
-      fieldValues[9],
     ],
     poseidon,
   );
@@ -287,12 +283,8 @@ function buildMicroBenchContext(eddsa, poseidon) {
 
   const hashIdInputs = [
     fieldValues[2],
-    fieldValues[5],
     fieldValues[3],
     fieldValues[7],
-    fieldValues[8],
-    fieldValues[6],
-    fieldValues[9],
   ];
 
   const signMessage = hashN(hashIdInputs, poseidon);

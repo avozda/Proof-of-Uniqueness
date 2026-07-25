@@ -9,7 +9,7 @@ Foundry project containing:
 
 `IdentityRegistry` is the on-chain acceptance layer for the browser-generated enrollment proof. It stores one active record per nullifier, checks issuer trust, checks that the proof uses the currently trusted OPRF public key, and binds each record to the wallet address exposed by the circuit.
 
-Owners can add or remove trusted issuers, rotate the trusted OPRF public key, and manage other owners. Users enroll with a zk proof plus an EIP-712 wallet signature. Users revoke with an EIP-712 revocation signature; no zk proof is needed for revocation. Expired or untrusted records can be removed with `purgeInvalidRecords()`.
+Owners can add or remove trusted issuers, rotate the trusted OPRF public key, and manage other owners. Users enroll with a zk proof plus an EIP-712 wallet signature. Users revoke with an EIP-712 revocation signature; no zk proof is needed for revocation. Expired or untrusted records can be removed in bounded batches with `purgeInvalidRecords(start, maxScans)`.
 
 ## Commands
 
@@ -99,7 +99,7 @@ If your terminal is non-interactive and prompts still fail, add:
   - Domain: `name` `"IdentityRegistry"`, `version` `"1"`, `chainId`, `verifyingContract` = this registry  
   `hashEnrollmentAuthorization` returns the digest to sign. Signature verification runs before the expensive verifier call.
 - **Revocation**: `revoke(nullifier, deadline, signature)` checks an EIP-712 `Revoke` signature from the stored `walletAddress`.
-- **Purge**: `purgeInvalidRecords()` scans the active nullifier list once per call and deletes records that are expired or whose issuer is no longer trusted. Revoked and purged records are removed from the active scan list with swap-and-pop.
+- **Purge**: `purgeInvalidRecords(start, maxScans)` inspects at most `maxScans` active records and returns `(purged, nextIndex)`. Pass `nextIndex` as the next call's `start`; zero means the pass is complete. Records moved into the current slot by swap-and-pop are inspected before the cursor advances, so invalid records are not skipped. A zero `maxScans` reverts with `InvalidPurgeLimit`.
 - **Hardening**: signal length and field-range checks, verifier `try/catch`, low-**s** signature checks.
 
 If circuits or public signal layout change, regenerate `VcOprfEnrollmentUltraVerifier.sol` from the circuit artifact and redeploy.

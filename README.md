@@ -12,7 +12,7 @@ This is a research prototype for testing the proposed design. It is not producti
 
 The local app issues a demo verifiable credential (VC) with BabyJubJub issuer and holder keys. In the browser, the holder first proves that the VC authorizes a blinded OPRF request. The local OPRF nodes verify that proof, return threshold OPRF responses, and the browser verifies the live transcript.
 
-The browser then builds a second Noir proof for enrollment. That proof ties together the VC, the holder key, the connected wallet address, and the verified OPRF transcript. `IdentityRegistry` verifies the final proof on-chain, stores the resulting nullifier, and uses EIP-712 wallet signatures for enrollment authorization and revocation.
+The private OPRF input is `Poseidon(credentialSubject.id, dateOfBirth, placeOfBirth)`, using only person-invariant fields so renewal and mutable demographic changes do not alter the nullifier. The browser then builds a second Noir proof for enrollment. That proof ties together the VC, the holder key, the connected wallet address, and the verified OPRF transcript. `IdentityRegistry` verifies the final proof on-chain, stores the resulting nullifier, and uses EIP-712 wallet signatures for enrollment authorization and revocation.
 
 ![Enrollment flow](./docs/enroll-flow.png)
 

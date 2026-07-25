@@ -101,6 +101,7 @@ contract IdentityRegistry {
     error InvalidSignature();
     error InvalidNullifier();
     error InvalidIssuerPublicKey();
+    error InvalidPurgeLimit();
 
     // Modifiers
 
@@ -270,14 +271,25 @@ contract IdentityRegistry {
 
     // Permissionless maintenance
 
-    /// @notice Permissionless maintenance function to remove invalid identities.
+    /// @notice Permissionless, bounded maintenance function to remove invalid identities.
     /// @dev Removes records that are expired or whose issuer is no longer trusted.
-    ///      Scans the active nullifier list from start to end each call.
+    ///      A record moved into the current slot by swap-and-pop is inspected before advancing.
+    /// @param start Index in the active nullifier list at which to resume scanning.
+    /// @param maxScans Maximum number of active records to inspect in this call.
     /// @return purged Number of identity records removed.
-    function purgeInvalidRecords() external returns (uint256 purged) {
+    /// @return nextIndex Index at which the next call should resume, or zero when the pass is complete.
+    function purgeInvalidRecords(uint256 start, uint256 maxScans)
+        external
+        returns (uint256 purged, uint256 nextIndex)
+    {
+        if (maxScans == 0) revert InvalidPurgeLimit();
+
         uint256 total = registeredNullifiers.length;
-        uint256 i = 0;
-        while (i < total) {
+        if (start >= total) return (0, 0);
+
+        uint256 i = start;
+        uint256 scanned;
+        while (i < total && scanned < maxScans) {
             uint256 nullifier = registeredNullifiers[i];
             IdentityRecord storage record = identitiesByNullifier[nullifier];
 
@@ -286,6 +298,7 @@ contract IdentityRegistry {
             bool expired = block.timestamp > record.validUntil;
             bool issuerUntrusted = !trustedIssuers[issuerPubKeyHash];
 
+            scanned++;
             if (expired || issuerUntrusted) {
                 _removeIdentity(nullifier);
                 emit IdentityPurged(nullifier, expired, issuerUntrusted);
@@ -295,6 +308,8 @@ contract IdentityRegistry {
                 i++;
             }
         }
+
+        nextIndex = i < total ? i : 0;
     }
 
     // Admin

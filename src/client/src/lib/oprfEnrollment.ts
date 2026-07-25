@@ -260,17 +260,13 @@ async function withProgressStep<T>(
 }
 
 function computeHashIdFromVc(vc: VerifiableCredential): bigint {
-  // Hash only the identity fields that define uniqueness, not the full VC payload.
+  // Keep the nullifier stable across credential renewal and mutable demographic changes.
   const fieldValues = buildFieldValuesOrdered(vc);
   return normalizeField(
     poseidonHash([
       fieldValues[2],
-      fieldValues[5],
       fieldValues[3],
       fieldValues[7],
-      fieldValues[8],
-      fieldValues[6],
-      fieldValues[9],
     ]),
   );
 }

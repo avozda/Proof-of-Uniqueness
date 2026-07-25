@@ -46,8 +46,8 @@ forge build --sizes
   - `removeTrustedIssuer`
   - `setTrustedOprfPublicKey`
 
-- `purgeInvalidRecords()`
-  - scans the active nullifier list on every call,
+- `purgeInvalidRecords(start, maxScans)`
+  - scans at most `maxScans` active records per call,
   - checks each live record for expiry and issuer trust,
   - deletes records that are expired or whose issuer is no longer trusted,
   - removes purged and revoked nullifiers from the active scan list with swap-and-pop.
@@ -83,13 +83,13 @@ Deployment and code size are separate from reusable per-enrollment gas:
 Registry-only behavior tests with the mock verifier currently show:
 
 - `revoke(...)` average gas: `42,162 gas`
-- `purgeInvalidRecords()` average gas in the focused registry test: `47,011 gas`
+- paginated purge gas depends on `maxScans` and the number of invalid records in that batch
 
 Those mock-verifier registry numbers are useful for non-zk registry behavior only. They intentionally exclude real enrollment proof verification.
 
 ### Purge scaling profile
 
-`purgeInvalidRecords()` is linear in the active nullifier list. Purged and revoked records are removed from that active list with swap-and-pop, so they do not add recurring scan cost to future purge calls. The full gas report average is not a good standalone estimate because the profiling test intentionally exercises several list sizes. Use this focused profile for sizing:
+`purgeInvalidRecords(start, maxScans)` is linear in the number of records inspected in one batch and bounded by `maxScans`. Purged and revoked records are removed from the active list with swap-and-pop, so they do not add recurring scan cost to future purge calls. The table below is the pre-pagination full-pass baseline; rerun the focused profile before publishing updated measurements.
 
 | Active records at start | Live valid scan gas | Live valid gas/record | Remove all gas | Remove all gas/record | Marginal remove gas/record | Next empty purge gas |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

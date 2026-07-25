@@ -41,6 +41,7 @@ const ERROR_NAME_MESSAGES: Record<string, string> = {
   InvalidSignature: REVERT_SELECTOR_MESSAGES["0x8baa579f"],
   InvalidNullifier: "Enrollment nullifier cannot be zero.",
   InvalidIssuerPublicKey: "Issuer public key coordinates cannot be zero.",
+  InvalidPurgeLimit: "Purge batch size must be greater than zero.",
 };
 
 function isHexData(value: unknown): value is `0x${string}` {
@@ -186,6 +187,9 @@ export function formatIdentityRegistryTxError(err: Error): string {
   }
   if (msg.includes("InvalidSignature")) {
     return ERROR_NAME_MESSAGES.InvalidSignature;
+  }
+  if (msg.includes("InvalidPurgeLimit")) {
+    return ERROR_NAME_MESSAGES.InvalidPurgeLimit;
   }
 
   if (
