@@ -77,6 +77,19 @@ export const identityRegistryAbi = [
   },
   {
     type: "function",
+    name: "purgeInvalidRecords",
+    inputs: [
+      { name: "start", type: "uint256", internalType: "uint256" },
+      { name: "maxScans", type: "uint256", internalType: "uint256" },
+    ],
+    outputs: [
+      { name: "purged", type: "uint256", internalType: "uint256" },
+      { name: "nextIndex", type: "uint256", internalType: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
     name: "identitiesByNullifier",
     inputs: [{ name: "", type: "uint256", internalType: "uint256" }],
     outputs: [
@@ -267,6 +280,7 @@ export const identityRegistryAbi = [
   { type: "error", name: "InvalidSignature", inputs: [] },
   { type: "error", name: "InvalidNullifier", inputs: [] },
   { type: "error", name: "InvalidIssuerPublicKey", inputs: [] },
+  { type: "error", name: "InvalidPurgeLimit", inputs: [] },
   { type: "error", name: "IssuerNotTrusted", inputs: [] },
   { type: "error", name: "NotOwner", inputs: [] },
   { type: "error", name: "UntrustedOprfPublicKey", inputs: [] },

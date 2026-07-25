@@ -11,7 +11,7 @@ The app lets you:
 
 ## Technical Flow
 
-The client prepares the VC fields in the same order expected by the Noir circuits. For OPRF access, it builds a `vc_blinded_query_auth_proof` proof that binds the holder key to the blinded query and request id. The local OPRF nodes verify that proof before returning threshold responses.
+The client prepares the VC fields in the same order expected by the Noir circuits and derives the private identity hash from `credentialSubject.id`, `dateOfBirth`, and `placeOfBirth`. Mutable and per-issuance fields remain signed inside the VC but do not affect the renewal-stable nullifier. For OPRF access, it builds a `vc_blinded_query_auth_proof` proof that binds the holder key to the blinded query and request id. The local OPRF nodes verify that proof before returning threshold responses.
 
 After the browser verifies and unblinds the OPRF transcript, it builds the `vc_oprf_enrollment_proof` proof. That proof exposes the trusted OPRF public key, VC expiry, issuer key, wallet address, and nullifier. The connected wallet signs an EIP-712 enrollment message, then the client calls `IdentityRegistry.enroll`. Revocation is lighter: the wallet signs an EIP-712 revocation message and the client calls `revoke`.
 

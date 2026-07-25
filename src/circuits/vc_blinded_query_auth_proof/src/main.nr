@@ -84,12 +84,8 @@ fn compute_hash_id(
     // It is what the holder signs, and it is also the input that gets blinded for the OPRF query.
     hash_n([
         field_values[2], // credentialSubject.id
-        field_values[5], // name
         field_values[3], // dateOfBirth
         field_values[7], // placeOfBirth
-        field_values[8], // sex
-        field_values[6], // nationality
-        field_values[9], // validFrom
     ])
 }
 

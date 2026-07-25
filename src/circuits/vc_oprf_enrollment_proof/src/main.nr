@@ -86,12 +86,8 @@ fn compute_hash_id(
     // It is the secret input that gets fed into the OPRF protocol.
     hash_n([
         field_values[2], // credentialSubject.id
-        field_values[5], // name
         field_values[3], // dateOfBirth
         field_values[7], // placeOfBirth
-        field_values[8], // sex
-        field_values[6], // nationality
-        field_values[9], // validFrom
     ])
 }
 
